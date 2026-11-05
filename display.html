@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Studio マネージャー(AI Studio 連携)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #0f172a; color: #f8fafc; padding: 20px 24px; min-width: 1000px; }
+    
+    header { display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 14px 22px; border-radius: 12px; margin-bottom: 18px; border: 1px solid #334155; }
+    .header-left { display: flex; align-items: center; gap: 20px; }
+    .header-left h1 { font-size: 18px; font-weight: 700; color: #38bdf8; white-space: nowrap; letter-spacing: 0.5px; }
+    
+    .nav-tabs { display: flex; gap: 6px; background: #0f172a; padding: 4px; border-radius: 8px; border: 1px solid #334155; }
+    .tab-btn { background: transparent; border: none; color: #94a3b8; padding: 7px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; white-space: nowrap; }
+    .tab-btn.active { background: #0284c7; color: white; }
+
+    .reset-timer { font-size: 13px; font-weight: 600; color: #fbbf24; background: #451a03; padding: 7px 16px; border-radius: 20px; border: 1px solid #b45309; white-space: nowrap; }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* タブ1: IDモニター */
+    .grid-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    @media (max-width: 1100px) { .grid-container { grid-template-columns: 1fr; } }
+    
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 11px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); transition: border-color 0.2s, box-shadow 0.2s; }
+    .card.rate-limited { border-color: #ef4444; box-shadow: 0 0 15px rgba(239, 68, 68, 0.3); }
+
+    .card-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+    .id-badge { background: #0284c7; color: white; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: bold; white-space: nowrap; }
+    
+    .limit-badge-btn { background: #334155; color: #94a3b8; border: 1px solid #475569; font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 6px; cursor: pointer; transition: all 0.2s; user-select: none; }
+    .limit-badge-btn:hover { background: #475569; color: #f8fafc; }
+    .limit-badge-btn.active { background: #ef4444; border-color: #dc2626; color: white; box-shadow: 0 0 8px rgba(239, 68, 68, 0.5); }
+
+    .google-id-input { flex: 1; background: #0f172a; border: 1px solid #475569; color: #38bdf8; padding: 5px 9px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+    .jump-btn { background: #2563eb; border: none; color: white; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: 0.2s; white-space: nowrap; }
+    .jump-btn:hover { background: #1d4ed8; }
+
+    .field-label { font-size: 11px; color: #94a3b8; margin-bottom: 3px; font-weight: 600; display: flex; justify-content: space-between; }
+    
+    .two-rows-box { display: flex; flex-direction: column; gap: 8px; background: #0f172a; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; }
+    .row-1 { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .prog-wrapper { flex: 1; min-width: 0; }
+    .prog-select { width: 100%; background: #1e293b; padding: 6px 10px; border-radius: 6px; font-size: 12px; transition: 0.2s; text-overflow: ellipsis; }
+    .prog-select.unselected { border: 1px dashed #64748b; color: #64748b; }
+    .prog-select.selected { border: 1px solid #0284c7; color: #38bdf8; font-weight: 600; background: #0c213b; }
+
+    .status-badge { display: flex; gap: 10px; background: #1e293b; padding: 6px 12px; border-radius: 6px; border: 1px solid #334155; font-size: 12px; color: #cbd5e1; white-space: nowrap; }
+
+    .row-2 { display: flex; align-items: center; gap: 8px; }
+    .meter-label-mini { font-size: 11px; color: #94a3b8; font-weight: 600; white-space: nowrap; }
+    .meter-segments { display: flex; gap: 5px; flex: 1; height: 24px; }
+    .segment { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; border-radius: 4px; cursor: pointer; border: 1px solid #475569; background: #334155; color: #94a3b8; transition: all 0.15s; user-select: none; }
+    .segment.active-20 { background: #10b981; color: white; border-color: #059669; }
+    .segment.active-40 { background: #84cc16; color: black; border-color: #65a30d; }
+    .segment.active-60 { background: #f59e0b; color: black; border-color: #d97706; }
+    .segment.active-80 { background: #f97316; color: white; border-color: #ea580c; }
+    .segment.active-100 { background: #ef4444; color: white; border-color: #dc2626; }
+
+    .theme-input { width: 100%; background: #0f172a; border: 1px solid #475569; color: #f8fafc; padding: 6px 10px; border-radius: 6px; font-size: 12px; }
+    .notes-area { width: 100%; height: 48px; background: #0f172a; border: 1px solid #475569; color: #f8fafc; padding: 6px 10px; border-radius: 6px; font-size: 12px; resize: none; }
+
+    /* タブ2: プログラム分析 */
+    .prog-dashboard { display: flex; flex-direction: column; gap: 20px; }
+    .period-bar { display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 12px 18px; border-radius: 10px; border: 1px solid #334155; }
+    .period-selector { display: flex; gap: 8px; }
+    .period-btn { background: #0f172a; border: 1px solid #475569; color: #cbd5e1; padding: 5px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; }
+    .period-btn.active { background: #38bdf8; color: #0f172a; border-color: #38bdf8; }
+    .chart-section { background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }
+    .chart-title { font-size: 14px; font-weight: 700; color: #f8fafc; margin-bottom: 16px; display: flex; justify-content: space-between; }
+    .chart-list { display: flex; flex-direction: column; gap: 14px; }
+    .chart-row { display: flex; flex-direction: column; gap: 5px; }
+    .chart-meta { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; }
+    .chart-bar-bg { width: 100%; height: 14px; background: #0f172a; border-radius: 7px; overflow: hidden; border: 1px solid #334155; }
+    .chart-bar-fill { height: 100%; border-radius: 7px; transition: width 0.4s ease; }
+    
+    .timeline-section { background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }
+    .timeline-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .timeline-table th { text-align: left; padding: 9px 12px; background: #0f172a; color: #94a3b8; border-bottom: 1px solid #334155; }
+    .timeline-table td { padding: 12px; border-bottom: 1px solid #334155; vertical-align: middle; }
+    .github-push-btn { background: #238636; border: 1px solid #2ea043; color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700; transition: 0.2s; }
+    .github-push-btn:hover { background: #2ea043; }
+
+    /* タブ3: マスタ設定 & API連携設定 */
+    .master-section { background: #1e293b; padding: 22px; border-radius: 12px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 20px; }
+    .api-card { background: #0f172a; border: 1px solid #38bdf8; border-radius: 10px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+    .api-card-title { font-size: 14px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
+    .api-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+    .api-field { display: flex; flex-direction: column; gap: 5px; }
+    .api-label { font-size: 11px; font-weight: 700; color: #cbd5e1; }
+    .api-input { background: #1e293b; border: 1px solid #475569; color: #f8fafc; padding: 7px 10px; border-radius: 6px; font-size: 12px; }
+
+    .master-desc { font-size: 12px; color: #94a3b8; background: #0f172a; padding: 10px 14px; border-radius: 8px; border-left: 4px solid #38bdf8; }
+    .master-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .master-table th { text-align: left; padding: 9px 12px; background: #0f172a; color: #94a3b8; border-bottom: 1px solid #334155; }
+    .master-table td { padding: 9px 12px; border-bottom: 1px solid #334155; }
+    .master-input { width: 100%; background: #0f172a; border: 1px solid #475569; color: #f8fafc; padding: 7px 9px; border-radius: 6px; font-size: 12px; }
+    .delete-btn { background: #dc2626; border: none; color: white; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; }
+    .delete-btn:hover { background: #b91c1c; }
+    .master-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; }
+    .btn-primary { background: #0284c7; border: none; color: white; padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-primary:hover { background: #0369a1; }
+    .btn-secondary { background: #334155; border: 1px solid #475569; color: #cbd5e1; padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .btn-secondary:hover { background: #475569; }
+    .btn-danger-outline { background: transparent; border: 1px solid #ef4444; color: #ef4444; padding: 7px 12px; border-radius: 6px; font-size: 11px; cursor: pointer; }
+    .btn-danger-outline:hover { background: #ef4444; color: white; }
+
+    /* タブ4: チャット履歴ログ */
+    .chat-layout { display: flex; gap: 16px; height: calc(100vh - 120px); min-height: 550px; }
+    .log-sidebar { width: 320px; background: #1e293b; border: 1px solid #334155; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+    .sidebar-header { padding: 14px 16px; border-bottom: 1px solid #334155; background: #0f172a; font-size: 13px; font-weight: 700; color: #38bdf8; display: flex; justify-content: space-between; align-items: center; }
+    .log-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .log-item { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; cursor: pointer; transition: 0.15s; }
+    .log-item:hover { border-color: #0284c7; background: #172554; }
+    .log-item.active { border-color: #38bdf8; background: #0c213b; }
+    .log-item-title { font-size: 12px; font-weight: 700; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+    .log-item-meta { display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; }
+    .log-item-badge { background: #0284c7; color: white; padding: 1px 6px; border-radius: 4px; font-size: 10px; }
+
+    .log-viewer { flex: 1; background: #1e293b; border: 1px solid #334155; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
+    .viewer-header { padding: 14px 18px; border-bottom: 1px solid #334155; background: #0f172a; display: flex; justify-content: space-between; align-items: center; }
+    .viewer-title { font-size: 14px; font-weight: 700; color: #f8fafc; }
+    .viewer-body { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+    
+    .chat-bubble { display: flex; flex-direction: column; gap: 6px; max-width: 85%; }
+    .chat-bubble.user { align-self: flex-end; }
+    .chat-bubble.model { align-self: flex-start; }
+    .bubble-header { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #94a3b8; font-weight: 600; padding: 0 4px; }
+    .copy-text-btn { background: #334155; border: 1px solid #475569; color: #cbd5e1; padding: 2px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+    .bubble-content { padding: 12px 16px; border-radius: 10px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .chat-bubble.user .bubble-content { background: #1e3a8a; color: #f8fafc; border: 1px solid #2563eb; }
+    .chat-bubble.model .bubble-content { background: #0f172a; color: #cbd5e1; border: 1px solid #334155; }
+
+    /* ====== GitHubセーブ用モーダル ====== */
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.75); display: none; justify-content: center; align-items: center; z-index: 10000; }
+    .modal-overlay.active { display: flex; }
+    .modal-card { background: #1e293b; border: 1px solid #38bdf8; border-radius: 12px; width: 720px; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+    .modal-header { padding: 16px 20px; background: #0f172a; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+    .modal-header h2 { font-size: 15px; font-weight: 700; color: #38bdf8; }
+    .modal-body { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+
+    .modal-field { display: flex; flex-direction: column; gap: 5px; }
+
+    .dropzone { border: 2px dashed #475569; border-radius: 8px; padding: 20px; text-align: center; background: #0f172a; cursor: pointer; transition: 0.2s; }
+    .dropzone:hover, .dropzone.dragover { border-color: #38bdf8; background: #172554; }
+    .dropzone p { font-size: 12px; color: #94a3b8; }
+    .file-input { display: none; }
+    .selected-files-list { font-size: 11px; color: #38bdf8; margin-top: 8px; line-height: 1.5; max-height: 80px; overflow-y: auto; text-align: left; }
+
+    .status-banner { font-size: 12px; padding: 10px 14px; border-radius: 6px; background: #0c213b; border: 1px solid #0284c7; color: #38bdf8; display: none; }
+    .status-banner.active { display: block; }
+
+    .commit-input { background: #0f172a; border: 1px solid #475569; color: #f8fafc; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; width: 100%; }
+    .summary-area { width: 100%; height: 140px; background: #0f172a; border: 1px solid #475569; color: #f8fafc; padding: 10px 12px; border-radius: 6px; font-size: 12px; line-height: 1.5; resize: vertical; }
+
+    .modal-footer { padding: 14px 20px; background: #0f172a; border-top: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-left">
+      <h1>Studio マネージャー(AI Studio 連携)</h1>
+      <div class="nav-tabs">
+        <button class="tab-btn active" data-tab="tab1">① IDモニター (残量・メーター)</button>
+        <button class="tab-btn" data-tab="tab2">② プログラム分析 (グラフ・GitHub)</button>
+        <button class="tab-btn" data-tab="tab3">⚙️ 設定 (マスタ・API連携)</button>
+        <button class="tab-btn" data-tab="tab4">📜 チャット履歴ログ</button>
+      </div>
+    </div>
+    <div class="reset-timer" id="resetCountdown">次回 17:00 リセットまで: 計算中...</div>
+  </header>
+
+  <!-- タブ1: IDモニター画面 -->
+  <div class="tab-content active" id="tab1">
+    <div class="grid-container" id="cardsGrid"></div>
+  </div>
+
+  <!-- タブ2: プログラム分析画面 -->
+  <div class="tab-content" id="tab2">
+    <div class="prog-dashboard">
+      <div class="period-bar">
+        <div style="font-weight: 600; color: #94a3b8; font-size: 13px;">集計スパン切り替え</div>
+        <div class="period-selector">
+          <button class="period-btn" data-period="today">1日 (Today)</button>
+          <button class="period-btn active" data-period="week">1週間 (Week)</button>
+          <button class="period-btn" data-period="month">1ヶ月 (Month)</button>
+        </div>
+      </div>
+
+      <div class="chart-section">
+        <div class="chart-title">
+          <span id="chartPeriodTitle">📊 プログラム別 リソース配分グラフ (今週の累計)</span>
+          <span style="font-size: 12px; color: #94a3b8; font-weight: normal;">トークン消費量と作業時間の比率</span>
+        </div>
+        <div class="chart-list" id="chartList"></div>
+      </div>
+
+      <div class="timeline-section">
+        <h2 style="font-size: 14px; color: #f8fafc; margin-bottom: 12px;">📦 プログラム一覧 & GitHubセーブ履歴</h2>
+        <table class="timeline-table">
+          <thead>
+            <tr>
+              <th style="width: 30%;">対象プログラム / 主なファイル</th>
+              <th style="width: 25%;">現在の作業状況</th>
+              <th style="width: 30%;">直近のセーブ (コミット)</th>
+              <th style="width: 15%;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="timelineBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- タブ3: 設定画面（API設定 & マスタ管理） -->
+  <div class="tab-content" id="tab3">
+    <div class="master-section">
+      <!-- GitHub & Gemini API 設定エリア -->
+      <div class="api-card">
+        <div class="api-card-title">🔑 GitHub & Gemini API 連携設定（自動作成・差分要約）</div>
+        <div class="api-grid">
+          <div class="api-field">
+            <label class="api-label">GitHub Personal Access Token (PAT)</label>
+            <input type="password" class="api-input" id="githubToken" placeholder="ghp_xxxxxxxxxxxx (repo権限)">
+          </div>
+          <div class="api-field">
+            <label class="api-label">対象リポジトリ名 (例: your-id/AIStudio-Manager)</label>
+            <input type="text" class="api-input" id="githubRepo" placeholder="未作成なら自動で新規作成されます">
+          </div>
+          <div class="api-field">
+            <label class="api-label">Gemini API Key</label>
+            <input type="password" class="api-input" id="geminiApiKey" placeholder="AI Studioで発行したAPIキー">
+          </div>
+          <div class="api-field">
+            <label class="api-label">Geminiモデル名 (初期指定)</label>
+            <input type="text" class="api-input" id="geminiModelName" value="gemini-3.5-flash-lite">
+          </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end;">
+          <button class="btn-primary" id="saveApiConfigBtn" style="padding: 6px 16px; font-size: 12px;">💾 API設定を保存</button>
+        </div>
+      </div>
+
+      <!-- プログラム定義マスタ管理 -->
+      <div class="master-desc">
+        📌 <strong>プログラム定義のマスタ管理エリア</strong><br>
+        ここで正式なプログラム名と対象ファイル（目録）を一括設定します。
+      </div>
+
+      <table class="master-table">
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 40%;">正式プログラム名</th>
+            <th style="width: 35%;">対象ファイル名 (目録メモ)</th>
+            <th style="width: 10%;">操作</th>
+          </tr>
+        </thead>
+        <tbody id="masterTableBody"></tbody>
+      </table>
+
+      <div class="master-actions">
+        <div style="display: flex; gap: 10px;">
+          <button class="btn-secondary" id="addMasterRowBtn">+ 新しいプログラム枠を追加</button>
+          <button class="btn-danger-outline" id="clearSampleBtn">初期サンプルを全消去して空にする</button>
+        </div>
+        <button class="btn-primary" id="saveMasterBtn">💾 この内容でマスタを確定・保存する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- タブ4: チャット履歴ログ画面 -->
+  <div class="tab-content" id="tab4">
+    <div class="chat-layout">
+      <div class="log-sidebar">
+        <div class="sidebar-header">
+          <span>📑 保存済みセッション一覧</span>
+          <button class="btn-danger-outline" id="clearAllLogsBtn" style="padding: 2px 7px; font-size: 10px;">全消去</button>
+        </div>
+        <div class="log-list" id="logListContainer"></div>
+      </div>
+
+      <div class="log-viewer">
+        <div class="viewer-header">
+          <div>
+            <span class="viewer-title" id="viewerSessionTitle">セッションを選択してください</span>
+            <span style="font-size: 12px; color: #94a3b8; margin-left: 10px;" id="viewerSessionMeta"></span>
+          </div>
+          <button class="delete-btn" id="deleteCurrentLogBtn" style="display: none;">このログを削除</button>
+        </div>
+        <div class="viewer-body" id="viewerBodyContainer">
+          <div style="text-align: center; color: #64748b; margin-top: 100px; font-size: 13px;">
+            👈 左の一覧から閲覧したいチャットセッションを選択してください。
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== GitHubセーブ用モーダル ====== -->
+  <div class="modal-overlay" id="saveModalOverlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modalProgTitle">🚀 GitHubへセーブ (差分解析 & Gemini自動要約)</h2>
+        <button id="closeModalBtn" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+      <div class="modal-body">
+        
+        <!-- モーダル内リポジトリ名入力欄 -->
+        <div class="modal-field">
+          <label class="field-label">📦 プッシュ先リポジトリ名 (例: username/AIStudio-Manager)</label>
+          <input type="text" class="commit-input" id="modalRepoInput" placeholder="username/repo-name (未作成なら自動作成されます)">
+        </div>
+
+        <div>
+          <label class="field-label">📁 ローカルで動作確認したファイルを選択 (複数選択可)</label>
+          <div class="dropzone" id="dropzone">
+            <p>📂 ここに完成したファイルをドラッグ＆ドロップ<br><span style="color: #38bdf8; text-decoration: underline;">またはクリックしてファイルを選択</span></p>
+            <input type="file" id="fileSelector" class="file-input" multiple>
+            <div class="selected-files-list" id="selectedFilesList"></div>
+          </div>
+        </div>
+
+        <div class="status-banner" id="statusBanner">⏳ GitHubの前回コードを取得し、Gemini-3.5-flash-liteで差分を要約中...</div>
+
+        <div>
+          <label class="field-label">📌 コミットメッセージ (1行要約)</label>
+          <input type="text" class="commit-input" id="commitMessageInput" placeholder="例: feat: Google AI Studio連携マネージャーの初期ファイル群を追加">
+        </div>
+
+        <div>
+          <label class="field-label">📝 変更概要・作業詳細 (AI自動生成ドラフト / 修正可能)</label>
+          <textarea class="summary-area" id="changeSummaryArea" placeholder="差分解析後にGeminiが自動で自然言語の概要ドラフトを生成します。確認して調整してください。"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="reGenerateSummaryBtn" style="display: none;">🤖 AI要約を再生成</button>
+        <div style="display: flex; gap: 10px; margin-left: auto;">
+          <button class="btn-secondary" id="cancelModalBtn">キャンセル</button>
+          <button class="btn-primary" id="executePushBtn" style="background: #238636; border-color: #2ea043;">🚀 この内容でGitHubへプッシュ</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="action.js"></script>
+</body>
+</html>
