@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Studio マネージャー(AI Studio 連携)",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "4つのGoogle AI Studioアカウントの使用量メーター、作業ログ、Gemini自動要約によるGitHub直接プッシュ機能を統合管理します。",
   "permissions": [
     "storage",
+    "unlimitedStorage",
     "tabs",
     "alarms"
   ],
