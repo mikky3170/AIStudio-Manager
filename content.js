@@ -1,9 +1,10 @@
-// AI Studioの画面から情報・リミットエラーを収集し、バーチャルスクロールを走査して完全なHTMLを出力するスクリプト
+// AI Studio 開発ナレッジ自動要約＆同期エンジン
+// （手繰り寄せ型巻き戻し ＆ 全会話走査 ＆ 30万tk肥大化警告インジケーター搭載）
 
 function extractAccountIndex() {
   const match = window.location.pathname.match(/\/u\/(\d+)/);
   if (match) {
-    return parseInt(match[1], 10) + 1; // /u/0 -> 1
+    return parseInt(match[1], 10) + 1; // /u/3 -> 4
   }
   return 1;
 }
@@ -16,37 +17,52 @@ function extractChatTitle() {
   return document.title.replace(" - Google AI Studio", "").trim() || "作業中タスク";
 }
 
+// === トークン数抽出 ===
 function extractTokens() {
-  const fullText = document.body ? (document.body.textContent || "") : "";
-  const match = fullText.match(/([\d,]+)\s*(?:tokens|\/\s*[\d,]+)/i);
-  if (match) {
-    return parseInt(match[1].replace(/,/g, ''), 10);
+  const uiSelectors = [
+    'ms-token-count',
+    '[data-test-id="token-count"]',
+    '.token-count',
+    '.token-counter',
+    'ms-run-settings',
+    'mat-sidenav',
+    'footer',
+    'mat-toolbar'
+  ];
+
+  for (const selector of uiSelectors) {
+    const els = document.querySelectorAll(selector);
+    for (const el of els) {
+      if (el.closest('ms-chat-turn, ms-user-turn, ms-model-turn, .chat-turn-container')) continue;
+      const text = el.innerText || el.textContent || "";
+      const val = parseTokenStringFromUI(text);
+      if (val > 0) return val;
+    }
   }
   return 0;
 }
 
-function checkRateLimit() {
-  if (!document.body) return false;
-  const fullText = document.body.textContent || "";
-  return fullText.includes("reached your rate limit") || 
-         fullText.includes("try again later") || 
-         fullText.includes("Quota exceeded") || 
-         fullText.includes("Resource has been exhausted");
+function parseTokenStringFromUI(text) {
+  if (!text) return 0;
+  const slashMatch = text.match(/([\d,]+)\s*\/\s*[\d,]+/);
+  if (slashMatch) {
+    return parseInt(slashMatch[1].replace(/,/g, ''), 10) || 0;
+  }
+  const tokenMatch = text.match(/([\d,]+)\s*tokens?/i);
+  if (tokenMatch) {
+    return parseInt(tokenMatch[1].replace(/,/g, ''), 10) || 0;
+  }
+  return 0;
 }
 
-let lastReportedLimited = false;
-
+// ステータス定期同期 ＆ 30万tk肥大化警告ボタンの動的更新
 function scanAndSend() {
   const accountId = extractAccountIndex();
   const title = extractChatTitle();
   const tokens = extractTokens();
-  const isLimited = checkRateLimit();
 
-  if (isLimited && !lastReportedLimited) {
-    lastReportedLimited = true;
-  } else if (!isLimited && lastReportedLimited) {
-    lastReportedLimited = false;
-  }
+  // 画面右上の要約ボタンの警告色チェック
+  updateButtonWarningState(tokens);
 
   chrome.runtime.sendMessage({
     type: "UPDATE_STATUS",
@@ -54,289 +70,265 @@ function scanAndSend() {
       accountId: accountId,
       title: title,
       tokens: tokens,
-      isRateLimited: isLimited,
       url: window.location.href
     }
   }).catch(() => {});
 }
 
-scanAndSend();
-setInterval(scanAndSend, 2000);
+// 30万トークンを超えたら要約ボタンをオレンジ色の警告状態にする
+function updateButtonWarningState(tokens) {
+  const btn = document.getElementById("studio-manager-knowledge-btn");
+  if (!btn || btn.disabled) return;
 
-// === 【バーチャルスクロール完全走査】全ターン収集＆美麗HTML出力 ===
+  if (tokens >= 300000) {
+    const kTokens = Math.round(tokens / 1000);
+    btn.innerText = `⚠️ ${kTokens}k tk 肥大化中 (要約＆新チャット推奨)`;
+    btn.style.background = "#d97706";
+    btn.style.borderColor = "#f59e0b";
+  } else {
+    btn.innerText = "🧠 ナレッジ要約してマネージャーへ同期";
+    btn.style.background = "#0284c7";
+    btn.style.borderColor = "#38bdf8";
+  }
+}
+
+scanAndSend();
+setInterval(scanAndSend, 3000);
+
+// === 【手繰り寄せ型巻き戻し ＆ 全履歴走査エンジン】 ===
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-function findScrollContainer() {
-  // バーチャルスクロールViewportまたはスクロール可能なコンテナを検出
-  const viewport = document.querySelector('cdk-virtual-scroll-viewport, ms-chat-view, .chat-viewport');
-  if (viewport) return viewport;
-
-  // なければスクロールバーを持つ親要素を探索
-  const allDivs = document.querySelectorAll('div, main');
-  for (const div of allDivs) {
-    const style = window.getComputedStyle(div);
-    if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && div.scrollHeight > div.clientHeight && div.clientHeight > 300) {
-      return div;
-    }
-  }
-  return document.documentElement;
+function compressCodeBlocks(text) {
+  return text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    const lines = code.trim().split("\n");
+    if (lines.length <= 6) return match;
+    const firstLine = lines[0].substring(0, 70);
+    const lastLine = lines[lines.length - 1].substring(0, 70);
+    return `\`\`\`${lang}\n${firstLine}\n// ... [コード省略: 計 ${lines.length} 行] ...\n${lastLine}\n\`\`\``;
+  });
 }
 
-async function collectAllChatTurns(updateProgress) {
-  const scrollContainer = findScrollContainer();
-  const originalScrollTop = scrollContainer.scrollTop;
-  const turnsMap = new Map(); // key: turnId or unique text, value: turn object
+function smartSampleContext(fullText, maxChars = 38000) {
+  if (fullText.length <= maxChars) return fullText;
+  const headChars = Math.floor(maxChars * 0.3);
+  const tailChars = Math.floor(maxChars * 0.7);
+  return `${fullText.substring(0, headChars)}\n\n...（中略: 途中経過ログ ${fullText.length - maxChars} 文字を圧縮）...\n\n${fullText.substring(fullText.length - tailChars)}`;
+}
 
-  updateProgress("チャットの先頭へ移動中...");
-  scrollContainer.scrollTop = 0;
-  await sleep(400);
+async function rewindToTopByHand(updateProgress) {
+  updateProgress("頑固なスクロールを手繰り寄せて最上部へ移動中...");
 
-  let prevScrollTop = -1;
-  const step = 450;
+  let prevTopElement = null;
   let noChangeCount = 0;
 
-  while (true) {
-    // 現在DOMに描画されているターンを取得
-    const turns = document.querySelectorAll('ms-chat-turn, .chat-turn-container');
-    
-    turns.forEach((turn, idx) => {
-      // ユーザー発言かモデル発言か判定
-      const isUser = turn.querySelector('[data-turn-role="User"]') !== null || 
-                     turn.classList.contains('user') ||
-                     turn.getAttribute('data-turn-role') === 'User';
-      
-      const role = isUser ? 'User' : 'Model';
-      const turnId = turn.id || turn.getAttribute('id') || `turn_${turnsMap.size}_${idx}`;
+  for (let i = 0; i < 25; i++) {
+    const turns = document.querySelectorAll('ms-chat-turn, ms-prompt-chunk, ms-response-chunk, .chat-turn');
+    if (turns.length > 0) {
+      const topTurn = turns[0];
+      topTurn.scrollIntoView({ behavior: 'instant', block: 'start' });
 
-      // コンテンツ要素
-      const contentEl = turn.querySelector('.turn-content, ms-prompt-chunk, .cmark-node') || turn;
-      const text = contentEl.innerText ? contentEl.innerText.trim() : "";
+      if (topTurn === prevTopElement) {
+        noChangeCount++;
+        if (noChangeCount >= 3) break;
+      } else {
+        noChangeCount = 0;
+      }
+      prevTopElement = topTurn;
+    }
+    await sleep(150);
+  }
+}
 
-      // 中身が空でない（バーチャルスクロールのダミー枠でない）場合のみ記録
-      if (text.length > 0 && !turnsMap.has(turnId)) {
-        // 不要なボタン・SVGを除去したクリーンHTMLを作成
-        const clone = turn.cloneNode(true);
-        clone.querySelectorAll('svg, defs, button, ms-chat-turn-options, .actions-container, .actions, mat-menu').forEach(el => el.remove());
+async function extractFullChatHistoryWithHand(updateProgress) {
+  const allTexts = [];
+  const seenTexts = new Set();
 
-        // 思考プロセス（Thoughts）の存在確認
-        const thoughtEl = clone.querySelector('ms-thought-chunk, .thought-panel');
-        let thoughtHtml = "";
-        if (thoughtEl) {
-          thoughtHtml = `<div class="thought-box"><strong>💭 Thinking Process:</strong><br>${thoughtEl.innerHTML}</div>`;
-          thoughtEl.remove();
+  await rewindToTopByHand(updateProgress);
+
+  updateProgress("てっぺんから下へ全会話を回収中...");
+  await sleep(250);
+
+  let prevBottomElement = null;
+  let noChangeCount = 0;
+
+  for (let step = 0; step < 40; step++) {
+    const turns = document.querySelectorAll('ms-chat-turn, ms-prompt-chunk, ms-response-chunk, .chat-turn');
+
+    turns.forEach(el => {
+      if (el.closest('.input-area, ms-chat-input, footer, mat-toolbar')) return;
+      if (el.tagName !== 'MS-CHAT-TURN' && el.closest('ms-chat-turn')) return;
+
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('button, svg, mat-icon, mat-menu, ms-thought-chunk, .thought-panel, ms-chat-turn-options').forEach(n => n.remove());
+
+      const textarea = el.querySelector('textarea, input');
+      let txt = (textarea && textarea.value) ? textarea.value.trim() : (clone.innerText ? clone.innerText.trim() : "");
+
+      if (txt.length > 2 && !/^Model\s+\d+:\d+$/i.test(txt)) {
+        const key = `${txt.substring(0, 60)}_${txt.length}`;
+        if (!seenTexts.has(key)) {
+          seenTexts.add(key);
+          allTexts.push(compressCodeBlocks(txt));
         }
-
-        turnsMap.set(turnId, {
-          id: turnId,
-          role: role,
-          thoughtHtml: thoughtHtml,
-          bodyHtml: clone.innerHTML
-        });
       }
     });
 
-    const currentScrollTop = scrollContainer.scrollTop;
-    const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
-    const percent = maxScroll > 0 ? Math.min(100, Math.round((currentScrollTop / maxScroll) * 100)) : 100;
-    
-    updateProgress(`ログ走査中... (${percent}%)`);
+    if (turns.length > 0) {
+      const bottomTurn = turns[turns.length - 1];
+      bottomTurn.scrollIntoView({ behavior: 'instant', block: 'end' });
 
-    if (currentScrollTop === prevScrollTop || currentScrollTop >= maxScroll) {
-      noChangeCount++;
-      if (noChangeCount >= 2) break; // 最下部到達
-    } else {
-      noChangeCount = 0;
+      if (bottomTurn === prevBottomElement) {
+        noChangeCount++;
+        if (noChangeCount >= 2) break;
+      } else {
+        noChangeCount = 0;
+      }
+      prevBottomElement = bottomTurn;
     }
 
-    prevScrollTop = currentScrollTop;
-    scrollContainer.scrollTop += step;
-    await sleep(100); // 描画待機
+    await sleep(150);
   }
 
-  // 元のスクロール位置に戻す
-  scrollContainer.scrollTop = originalScrollTop;
-
-  return Array.from(turnsMap.values());
+  const fullTextCombined = allTexts.join("\n\n---\n\n");
+  return smartSampleContext(fullTextCombined);
 }
 
-async function exportChatAsHtml(btn) {
-  const title = extractChatTitle();
-  const now = new Date();
-  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+async function requestGeminiApi(modelName, apiKey, promptText) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+  const body = {
+    contents: [{ parts: [{ text: promptText }] }],
+    generationConfig: { temperature: 0.2 }
+  };
 
-  const collectedTurns = await collectAllChatTurns((msg) => {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const errMsg = err.error?.message || `HTTP ${res.status}`;
+    const errorObj = new Error(errMsg);
+    errorObj.status = res.status;
+    throw errorObj;
+  }
+
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+}
+
+async function callGeminiForKnowledgeSummary(chatContext, apiConfig) {
+  const primaryModel = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
+  const fallbackModel = "gemini-flash-lite-latest";
+
+  const prompt = `あなたはプロのソフトウェアエンジニア兼ナレッジマネージャーです。
+以下に提供する【セッション全体の全会話ログ】を最初から最後までしっかりと読み解き、後から検索して見返しやすい【開発ナレッジカード】を作成してください。
+
+【厳格な指示】
+直近の最後のやり取りだけに偏らず、このチャット全体を通して行われた【最初に取り組んだ目的・前半の議論】、【中盤の改修や試行錯誤】、【最終的な決定事項や得られたノウハウ】を、時系列の流れに沿って漏れなく網羅してください。
+
+【厳格な出力フォーマット】
+以下の3つの見出し（■）を使って、日本語のプレーンテキストで箇条書きで出力してください。Markdownの太字記号（**）や装飾記号は最小限にしてください。
+
+■ セッションの目的
+（このチャット全体で何を開発・検討しようとしたかを1〜2行で簡潔に）
+
+■ 主な決定事項・コード改修
+・（セッション全体で決定した仕様や、実装・修正した重要ポイントを時系列順に箇条書きで3〜5行）
+
+■ 💡 得られたノウハウ・知見・重要キーワード
+・（会話全体の中で出た開発のコツ、解決策、後から検索したくなるキーワードを箇条書きで3〜5行）
+
+【セッション全体の全会話ログ】
+${chatContext}
+`;
+
+  try {
+    const result = await requestGeminiApi(primaryModel, apiConfig.geminiApiKey, prompt);
+    return { text: result, usedModel: primaryModel };
+  } catch (err) {
+    console.warn(`プライマリモデル (${primaryModel}) でエラー: ${err.message}。フォールバック (${fallbackModel}) を試行します...`);
+    try {
+      const result = await requestGeminiApi(fallbackModel, apiConfig.geminiApiKey, prompt);
+      return { text: result, usedModel: fallbackModel };
+    } catch (err2) {
+      throw new Error(`全モデルで要約失敗: ${err.message} / ${err2.message}`);
+    }
+  }
+}
+
+async function executeKnowledgeSync(btn) {
+  btn.disabled = true;
+
+  const accountId = extractAccountIndex();
+  const title = extractChatTitle();
+
+  const fullText = await extractFullChatHistoryWithHand((msg) => {
     btn.innerText = `⏳ ${msg}`;
   });
 
-  if (collectedTurns.length === 0) {
-    alert("チャットのメッセージを取得できませんでした。画面が表示されているかご確認ください。");
+  if (!fullText || fullText.length < 10) {
+    alert("会話内容が取得できませんでした。AI Studioにメッセージが表示されているかご確認ください。");
+    btn.disabled = false;
+    btn.innerText = "🧠 ナレッジ要約してマネージャーへ同期";
     return;
   }
 
-  // 収集したターンをクリーンなHTMLブロックに再構成
-  let chatBodyHtml = "";
-  collectedTurns.forEach(turn => {
-    const isUser = turn.role === "User";
-    const bubbleClass = isUser ? "bubble-user" : "bubble-model";
-    const authorName = isUser ? "👤 あなた (User)" : "🤖 AI Studio (Model)";
+  chrome.storage.local.get(["apiConfig"], async (res) => {
+    const apiConfig = res.apiConfig || {};
 
-    chatBodyHtml += `
-      <div class="chat-row ${isUser ? 'right' : 'left'}">
-        <div class="author-name">${authorName}</div>
-        ${turn.thoughtHtml}
-        <div class="chat-bubble ${bubbleClass}">
-          ${turn.bodyHtml}
-        </div>
-      </div>
-    `;
+    let summaryText = "";
+    let usedModel = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
+
+    if (apiConfig.geminiApiKey) {
+      btn.innerText = `🤖 ${usedModel} でセッション全体を要約中...`;
+      try {
+        const aiResponse = await callGeminiForKnowledgeSummary(fullText, apiConfig);
+        summaryText = aiResponse.text;
+        usedModel = aiResponse.usedModel;
+      } catch (err) {
+        console.error("Gemini API Error:", err);
+        summaryText = `【自動要約エラー: ${err.message}】\n\n■ 会話スニペット:\n${fullText.substring(0, 400)}...`;
+      }
+    } else {
+      summaryText = `■ セッションの目的\n${title} の作業セッション\n\n■ 会話スニペット (APIキーを設定すると詳細要約されます)\n${fullText.substring(0, 400)}...\n\n■ 💡 重要キーワード\n・${title}、作業ログ`;
+      usedModel = "未連携(スニペット)";
+    }
+
+    const now = new Date();
+    const dateStr = `${now.getMonth() + 1}/${now.getDate()}`;
+    const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const formattedDate = `${dateStr} ${timeStr}`;
+
+    chrome.runtime.sendMessage({
+      type: "SAVE_KNOWLEDGE_SUMMARY",
+      data: {
+        accountId: accountId,
+        title: title,
+        url: window.location.href,
+        summary: summaryText,
+        chatDate: formattedDate,
+        updatedAt: formattedDate,
+        usedModel: usedModel
+      }
+    }, () => {
+      btn.innerText = "✅ ナレッジ同期完了！";
+      setTimeout(() => {
+        btn.disabled = false;
+        scanAndSend(); // ボタン状態を最新トークン数に応じて復帰
+      }, 2500);
+    });
   });
-
-  const fullHtmlContent = `<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <title>${escapeHtml(title)} - AI Studio 会話ログ</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background-color: #0f172a;
-      color: #f8fafc;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      padding: 30px 20px;
-      display: flex;
-      justify-content: center;
-      line-height: 1.6;
-    }
-    .container {
-      width: 100%;
-      max-width: 960px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-    .header-card {
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 12px;
-      padding: 20px 24px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    }
-    .header-card h1 { font-size: 20px; color: #38bdf8; margin-bottom: 6px; }
-    .header-card .meta { font-size: 12px; color: #94a3b8; }
-
-    .chat-container {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-    .chat-row {
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-    }
-    .chat-row.right { align-items: flex-end; }
-    .chat-row.left { align-items: flex-start; }
-
-    .author-name {
-      font-size: 11px;
-      font-weight: 700;
-      color: #94a3b8;
-      margin-bottom: 4px;
-      padding: 0 4px;
-    }
-
-    .chat-bubble {
-      width: fit-content;
-      max-width: 88%;
-      padding: 14px 18px;
-      border-radius: 12px;
-      font-size: 13px;
-      word-break: break-word;
-      line-height: 1.6;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-    }
-    .bubble-user {
-      background: #1e3a8a !important;
-      border: 1px solid #2563eb !important;
-      color: #f8fafc !important;
-      border-bottom-right-radius: 2px;
-    }
-    .bubble-model {
-      background: #1e293b !important;
-      border: 1px solid #334155 !important;
-      color: #e2e8f0 !important;
-      border-bottom-left-radius: 2px;
-    }
-
-    .thought-box {
-      background: #162032;
-      border: 1px dashed #475569;
-      border-radius: 8px;
-      padding: 10px 14px;
-      margin-bottom: 8px;
-      font-size: 12px;
-      color: #94a3b8;
-      max-width: 88%;
-    }
-
-    /* コードブロック整形 */
-    pre {
-      background: #090d16 !important;
-      border: 1px solid #334155 !important;
-      border-radius: 8px !important;
-      padding: 12px !important;
-      margin: 10px 0 !important;
-      overflow-x: auto !important;
-      color: #cbd5e1 !important;
-      font-family: Consolas, Monaco, "Courier New", monospace !important;
-      font-size: 12px !important;
-    }
-    code { font-family: Consolas, Monaco, "Courier New", monospace !important; }
-    
-    /* 余計な空ブロックや高さ固定を消去 */
-    div[style*="height"] { height: auto !important; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header-card">
-      <h1>💬 ${escapeHtml(title)}</h1>
-      <div class="meta">保存日時: ${now.toLocaleString()} | ソース: ${escapeHtml(window.location.href)} | 発言数: ${collectedTurns.length}</div>
-    </div>
-    <div class="chat-container">
-      ${chatBodyHtml}
-    </div>
-  </div>
-</body>
-</html>`;
-
-  const blob = new Blob([fullHtmlContent], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  const cleanTitle = title.replace(/[\\/:*?"<>|]/g, "_").substring(0, 30);
-  a.href = url;
-  a.download = `AIStudio_${cleanTitle}_${dateStr}.html`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
-function escapeHtml(str) {
-  return (str || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-// === 画面右上に「💾 チャットをHTML保存」ボタンを設置 ===
-function injectSaveButton() {
-  if (document.getElementById("studio-manager-save-btn")) return;
+function injectKnowledgeButton() {
+  if (document.getElementById("studio-manager-knowledge-btn")) return;
 
   const btn = document.createElement("button");
-  btn.id = "studio-manager-save-btn";
-  btn.innerText = "💾 チャットをHTML保存";
+  btn.id = "studio-manager-knowledge-btn";
+  btn.innerText = "🧠 ナレッジ要約してマネージャーへ同期";
   btn.style.cssText = `
     position: fixed;
     top: 14px;
@@ -345,7 +337,7 @@ function injectSaveButton() {
     background: #0284c7;
     color: white;
     border: 1px solid #38bdf8;
-    padding: 8px 14px;
+    padding: 8px 15px;
     border-radius: 8px;
     font-size: 12px;
     font-weight: 700;
@@ -354,27 +346,16 @@ function injectSaveButton() {
     transition: all 0.2s;
   `;
 
-  btn.onmouseover = () => btn.style.background = "#0369a1";
-  btn.onmouseout = () => btn.style.background = "#0284c7";
-
-  btn.onclick = async () => {
-    btn.disabled = true;
-    try {
-      await exportChatAsHtml(btn);
-      btn.innerText = "✅ ダウンロード完了！";
-    } catch (e) {
-      console.error(e);
-      btn.innerText = "❌ エラー発生";
-    } finally {
-      setTimeout(() => {
-        btn.disabled = false;
-        btn.innerText = "💾 チャットをHTML保存";
-      }, 2500);
-    }
+  btn.onmouseover = () => {
+    if (btn.style.background !== "rgb(217, 119, 6)") btn.style.background = "#0369a1";
   };
+  btn.onmouseout = () => {
+    if (btn.style.background !== "rgb(217, 119, 6)") btn.style.background = "#0284c7";
+  };
+  btn.onclick = () => executeKnowledgeSync(btn);
 
   document.body.appendChild(btn);
 }
 
-setTimeout(injectSaveButton, 1500);
-setInterval(injectSaveButton, 3000);
+setTimeout(injectKnowledgeButton, 1500);
+setInterval(injectKnowledgeButton, 3000);
