@@ -7,9 +7,12 @@ function createInitialAccounts() {
       currentProgramId: "",
       theme: "",
       tokens: 0,
+      currentChatTokens: 0,
       meterLevel: 0,
+      statusMode: "normal", // "normal" | "warning" | "limited"
       isManual: false,
       isRateLimited: false,
+      hasError: false,
       startTime: null,
       tabId: null,
       notes: ""
@@ -19,12 +22,22 @@ function createInitialAccounts() {
 }
 
 const defaultPrograms = [
-  { id: "prog_1", name: "01_Studioマネージャー(AI Studio連携)", files: "manifest.json, background.js, display.html, action.js, content.js", tokensWeek: 1250000, tokensMonth: 3400000, hoursWeek: 5.5, lastCommit: "v1.0: 初回開発完了", lastId: "ID 1" }
+  { 
+    id: "prog_1", 
+    name: "01_Studioマネージャー(AI Studio連携)", 
+    files: "manifest.json, background.js, display.html, action.js, content.js", 
+    tokensWeek: 1250000, 
+    tokensMonth: 3400000, 
+    hoursWeek: 5.5, 
+    lastCommit: "v1.1: 初期開発完了", 
+    lastId: "ID 1",
+    saveHistory: []
+  }
 ];
 
 let accountsData = createInitialAccounts();
 let programsData = defaultPrograms;
-let chatLogsData = [];
+let knowledgeLogsData = [];
 let apiConfig = {
   githubToken: "",
   githubRepo: "",
@@ -32,7 +45,7 @@ let apiConfig = {
   geminiModelName: "gemini-3.5-flash-lite"
 };
 
-let currentSelectedLogId = null;
+let selectedKnowledgeFilter = "ALL";
 let currentPeriod = "week";
 let isDataLoaded = false;
 let currentTargetProg = null;
@@ -59,6 +72,13 @@ function updateCountdown() {
   timerEl.innerText = `次回 17:00 リセットまで: あと ${hours}時間 ${minutes}分 ${seconds}秒`;
 }
 
+function updateActiveModelBadge() {
+  const badge = document.getElementById("activeModelBadge");
+  if (badge) {
+    badge.innerText = `🤖 Model: ${apiConfig.geminiModelName || 'gemini-3.5-flash-lite'}`;
+  }
+}
+
 function formatElapsedTime(startTime) {
   if (!startTime) return "未開始";
   const diffSec = Math.max(0, Math.floor((Date.now() - startTime) / 1000));
@@ -67,7 +87,39 @@ function formatElapsedTime(startTime) {
   return `${hours}h ${minutes}m`;
 }
 
-// === タブ1: IDモニター組み立て ===
+function calculateDailyMeter(dailyTokens) {
+  if (!dailyTokens || dailyTokens <= 0) return 0;
+  if (dailyTokens <= 300000) return 20;
+  if (dailyTokens <= 600000) return 40;
+  if (dailyTokens <= 900000) return 60;
+  return 80;
+}
+
+// 履歴データのクリーンアップ ＆ 01_Studioマネージャーの初回セーブ詳細復元
+function cleanupAndMigrateSaveHistory() {
+  let hasChanges = false;
+  programsData.forEach(p => {
+    if (p.id === "prog_1") {
+      if (!p.saveHistory || p.saveHistory.length === 0) {
+        p.saveHistory = [{
+          timestamp: Date.now() - 7200000,
+          dateStr: "2024/11/6 10:30",
+          commitMsg: p.lastCommit || "v1.1: 初期開発完了",
+          summary: "■ 初回リポジトリ作成・ベースコードの登録\n・Google AI Studio連携マネージャーの初期実装一式（manifest.json, background.js, display.html, action.js, content.js）\n・IDモニター（残量監視・メーター）、プログラム分析、マスタ設定の基盤構築"
+        }];
+        hasChanges = true;
+      }
+    } else {
+      if (p.saveHistory && p.saveHistory.length > 0) {
+        p.saveHistory = [];
+        hasChanges = true;
+      }
+    }
+  });
+  if (hasChanges) saveAllData();
+}
+
+// === タブ1: IDモニター ===
 function setupCards() {
   const container = document.getElementById("cardsGrid");
   container.innerHTML = "";
@@ -78,7 +130,14 @@ function setupCards() {
     card.className = "card";
     card.id = `card-${id}`;
 
-    let meterHtml = steps.map(step => `<div class="segment" data-step="${step}">${step}%</div>`).join("");
+    // 20〜80%は自動表示用タイトル、100%のみ手動切替タイトル
+    let meterHtml = steps.map(step => {
+      const isManualBtn = (step === 100);
+      const titleText = isManualBtn 
+        ? '【手動専用】クリックでリミット到達(100%)を手動切替' 
+        : `【自動表示】本日の累計消費により自動点灯（手動選択不可）`;
+      return `<div class="segment ${isManualBtn ? 'manual-seg' : ''}" data-step="${step}" title="${titleText}">${step}%</div>`;
+    }).join("");
     
     let progOptions = `<option value="">── 対象プログラムを選択 (未分類) ──</option>`;
     programsData.forEach(p => {
@@ -88,41 +147,48 @@ function setupCards() {
     card.innerHTML = `
       <div class="card-top">
         <span class="id-badge">ID ${id}</span>
-        <button class="limit-badge-btn" id="badge-${id}" data-account="${id}">⚠️ リミット未達</button>
+        <button class="status-toggle-btn mode-normal" id="badge-${id}" data-account="${id}" title="クリックで 未達 ➜ 警戒 ➜ 到達 を手動切替">⚠️ リミット未達</button>
         <input type="text" class="google-id-input" data-account="${id}" placeholder="Google ID (例: work@gmail.com)">
         <button class="jump-btn" data-account="${id}">このタブを開く</button>
       </div>
 
-      <div class="two-rows-box">
-        <div class="row-1">
-          <div class="prog-wrapper">
-            <select class="prog-select unselected" data-account="${id}">
-              ${progOptions}
-            </select>
+      <div class="card-body-area">
+        <div class="two-rows-box">
+          <div class="row-1">
+            <div class="prog-wrapper">
+              <select class="prog-select unselected" data-account="${id}">
+                ${progOptions}
+              </select>
+            </div>
+            <div class="status-badge">
+              <span id="time-${id}">⏱ 未開始</span>
+              <span style="color: #475569;">|</span>
+              <span id="token-${id}">📊 累計: 0 tk</span>
+            </div>
           </div>
-          <div class="status-badge">
-            <span id="time-${id}">⏱ 未開始</span>
-            <span style="color: #475569;">|</span>
-            <span id="token-${id}">📊 0 tk</span>
+
+          <div class="row-2">
+            <span class="meter-label-mini">メーター (20-80%自動 / 100%手動)</span>
+            <div class="meter-segments" data-account="${id}" id="meter-${id}">
+              ${meterHtml}
+            </div>
+          </div>
+
+          <div class="chat-tokens-info" id="chatInfo-${id}">
+            <span>💬 現在のチャット長: <strong id="chatTokens-${id}">0</strong> tk</span>
+            <span id="bloatBadge-${id}" style="display: none;" class="bloat-badge">⚠️ 肥大化中・要約推奨</span>
           </div>
         </div>
 
-        <div class="row-2">
-          <span class="meter-label-mini">メーター</span>
-          <div class="meter-segments" data-account="${id}" id="meter-${id}">
-            ${meterHtml}
-          </div>
+        <div>
+          <div class="field-label">📌 本日の作業テーマ (連携プログラム等)</div>
+          <input type="text" class="theme-input" data-account="${id}" placeholder="例: 〇〇機能の実装 (＋プログラムB連携)">
         </div>
-      </div>
 
-      <div>
-        <div class="field-label">📌 本日の作業テーマ (連携プログラム等)</div>
-        <input type="text" class="theme-input" data-account="${id}" placeholder="例: 〇〇機能の実装 (＋プログラムB連携)">
-      </div>
-
-      <div>
-        <div class="field-label">📝 備考・メモ</div>
-        <textarea class="notes-area" data-account="${id}" placeholder="メモ、プロンプトの調整内容など..."></textarea>
+        <div>
+          <div class="field-label">📝 備考・メモ</div>
+          <textarea class="notes-area" data-account="${id}" placeholder="メモ、プロンプトの調整内容など..."></textarea>
+        </div>
       </div>
     `;
 
@@ -133,16 +199,197 @@ function setupCards() {
   updateCardValues();
 }
 
-// === タブ2: プログラム分析・タイムライン ===
+function attachCardEvents() {
+  document.querySelectorAll(".status-toggle-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const id = e.target.dataset.account;
+      cycleAccountStatus(id);
+    });
+  });
+
+  // 100%のみ手動クリックを受け付ける（20〜80%はクリック無効）
+  document.querySelectorAll(".meter-segments").forEach(meter => {
+    meter.addEventListener("click", (e) => {
+      const seg = e.target.closest(".segment");
+      if (!seg) return;
+      const id = meter.dataset.account;
+      const step = parseInt(seg.dataset.step, 10);
+
+      if (step === 100) {
+        const current = accountsData[id];
+        // 100% <-> 通常（自動計算値）をユーザーの意思でいつでも手動切替可能
+        if (current.statusMode === "limited") {
+          current.statusMode = "normal";
+          current.isRateLimited = false;
+          current.hasError = false;
+          current.meterLevel = calculateDailyMeter(current.tokens);
+        } else {
+          current.statusMode = "limited";
+          current.isRateLimited = true;
+          current.hasError = false;
+          current.meterLevel = 100;
+        }
+        saveAllData();
+        updateCardValues();
+      }
+    });
+  });
+
+  document.querySelectorAll(".prog-select").forEach(sel => {
+    sel.addEventListener("change", (e) => {
+      const id = e.target.dataset.account;
+      const val = e.target.value;
+      accountsData[id].currentProgramId = val;
+      e.target.className = val === "" ? "prog-select unselected" : "prog-select selected";
+      saveAllData();
+      renderKnowledgeFilterTabs();
+    });
+  });
+
+  document.querySelectorAll(".google-id-input").forEach(el => el.addEventListener("input", e => { accountsData[e.target.dataset.account].googleId = e.target.value; saveAllData(); }));
+  document.querySelectorAll(".theme-input").forEach(el => el.addEventListener("input", e => { accountsData[e.target.dataset.account].theme = e.target.value; saveAllData(); }));
+  document.querySelectorAll(".notes-area").forEach(el => el.addEventListener("input", e => { accountsData[e.target.dataset.account].notes = e.target.value; saveAllData(); }));
+
+  document.querySelectorAll(".jump-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const id = parseInt(e.target.dataset.account, 10);
+      const data = accountsData[id];
+      if (data && data.tabId) {
+        chrome.tabs.update(data.tabId, { active: true }, tab => {
+          if (chrome.runtime.lastError || !tab) chrome.tabs.create({ url: `https://aistudio.google.com/u/${id - 1}/` });
+        });
+      } else {
+        chrome.tabs.create({ url: `https://aistudio.google.com/u/${id - 1}/` });
+      }
+    });
+  });
+}
+
+// ユーザー主権の手動トグル: いつでも元に戻せる自由な循環
+function cycleAccountStatus(id) {
+  const current = accountsData[id];
+  const mode = current.statusMode || (current.isRateLimited ? "limited" : (current.hasError ? "warning" : "normal"));
+
+  if (mode === "normal") {
+    current.statusMode = "warning";
+    current.hasError = true;
+    current.isRateLimited = false;
+  } else if (mode === "warning") {
+    current.statusMode = "limited";
+    current.hasError = false;
+    current.isRateLimited = true;
+    current.meterLevel = 100;
+  } else {
+    // limitedからnormalへいつでも戻せる
+    current.statusMode = "normal";
+    current.hasError = false;
+    current.isRateLimited = false;
+    current.meterLevel = calculateDailyMeter(current.tokens);
+  }
+
+  saveAllData();
+  updateCardValues();
+}
+
+function updateCardValues() {
+  if (!isDataLoaded) return;
+
+  for (let id = 1; id <= 4; id++) {
+    const data = accountsData[id] || {};
+    const card = document.getElementById(`card-${id}`);
+    const badgeBtn = document.getElementById(`badge-${id}`);
+    const meterContainer = document.getElementById(`meter-${id}`);
+
+    const mode = data.statusMode || (data.isRateLimited ? "limited" : (data.hasError ? "warning" : "normal"));
+
+    if (card) {
+      if (mode === "limited") {
+        card.className = "card status-limited";
+      } else if (mode === "warning") {
+        card.className = "card status-warning";
+      } else {
+        card.className = "card";
+      }
+    }
+
+    if (badgeBtn) {
+      badgeBtn.className = "status-toggle-btn";
+      if (mode === "limited") {
+        badgeBtn.classList.add("mode-limited");
+        badgeBtn.innerText = "⛔ リミット到達・停止";
+      } else if (mode === "warning") {
+        badgeBtn.classList.add("mode-warning");
+        badgeBtn.innerText = "⚡ エラー多発・警戒";
+      } else {
+        badgeBtn.classList.add("mode-normal");
+        badgeBtn.innerText = "⚠️ リミット未達";
+      }
+    }
+
+    const idInput = document.querySelector(`.google-id-input[data-account="${id}"]`);
+    if (idInput && document.activeElement !== idInput) idInput.value = data.googleId || "";
+
+    const progSelect = document.querySelector(`.prog-select[data-account="${id}"]`);
+    if (progSelect) {
+      progSelect.value = data.currentProgramId || "";
+      progSelect.className = !data.currentProgramId ? "prog-select unselected" : "prog-select selected";
+    }
+
+    const themeInput = document.querySelector(`.theme-input[data-account="${id}"]`);
+    if (themeInput && document.activeElement !== themeInput) themeInput.value = data.theme || "";
+
+    const notesArea = document.querySelector(`.notes-area[data-account="${id}"]`);
+    if (notesArea && document.activeElement !== notesArea) notesArea.value = data.notes || "";
+
+    const timeText = document.getElementById(`time-${id}`);
+    if (timeText) timeText.innerText = `⏱ ${formatElapsedTime(data.startTime)}`;
+
+    const tokenText = document.getElementById(`token-${id}`);
+    if (tokenText) tokenText.innerText = `📊 累計: ${(data.tokens || 0).toLocaleString()} tk`;
+
+    const chatTokensEl = document.getElementById(`chatTokens-${id}`);
+    const bloatBadgeEl = document.getElementById(`bloatBadge-${id}`);
+    const curTokens = data.currentChatTokens || 0;
+
+    if (chatTokensEl) chatTokensEl.innerText = curTokens.toLocaleString();
+    if (bloatBadgeEl) {
+      bloatBadgeEl.style.display = (curTokens >= 300000) ? "inline-block" : "none";
+    }
+
+    if (meterContainer) {
+      const currentLevel = (mode === "limited") ? 100 : calculateDailyMeter(data.tokens || 0);
+
+      meterContainer.querySelectorAll(".segment").forEach(seg => {
+        const step = parseInt(seg.dataset.step, 10);
+        seg.className = "segment";
+        if (step === 100) seg.classList.add("manual-seg");
+
+        if (step === 100) {
+          if (mode === "limited") {
+            seg.classList.add("active-100");
+          }
+        } else {
+          if (currentLevel >= step) {
+            seg.classList.add(`active-${step}`);
+          }
+        }
+      });
+    }
+  }
+}
+
+// === タブ2: プログラム分析 ===
 function renderProgramDashboard() {
   const chartList = document.getElementById("chartList");
-  const timelineBody = document.getElementById("timelineBody");
+  const progCardList = document.getElementById("progCardList");
   chartList.innerHTML = "";
-  timelineBody.innerHTML = "";
+  progCardList.innerHTML = "";
+
+  cleanupAndMigrateSaveHistory();
 
   if (programsData.length === 0) {
     chartList.innerHTML = `<div style="color: #94a3b8; font-size: 13px;">プログラムが登録されていません。「⚙️ 設定」タブから登録してください。</div>`;
-    timelineBody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #94a3b8;">登録されているプログラムがありません。</td></tr>`;
+    progCardList.innerHTML = `<div style="color: #94a3b8; font-size: 13px; text-align: center; padding: 20px;">登録されているプログラムがありません。</div>`;
     return;
   }
 
@@ -156,36 +403,37 @@ function renderProgramDashboard() {
     let percent = Math.min(100, Math.round((tokens / maxToken) * 100));
     let color = colors[index % colors.length];
 
-    const row = document.createElement("div");
-    row.className = "chart-row";
-    row.innerHTML = `
+    const chartRow = document.createElement("div");
+    chartRow.className = "chart-row";
+    chartRow.innerHTML = `
       <div class="chart-meta">
         <span>📦 ${prog.name}</span>
-        <span style="color: #cbd5e1;">${tokens.toLocaleString()} トークン  |  ⏱ ${hours} 時間</span>
+        <span style="color: #cbd5e1;">${tokens.toLocaleString()} tk | ⏱ ${hours}h</span>
       </div>
       <div class="chart-bar-bg">
         <div class="chart-bar-fill" style="width: ${percent}%; background: ${color};"></div>
       </div>
     `;
-    chartList.appendChild(row);
+    chartList.appendChild(chartRow);
 
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>
-        <strong style="color: #38bdf8;">${prog.name}</strong>
-        <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">ファイル: ${prog.files || '未登録'}</div>
-      </td>
-      <td>
-        <span style="background: #0284c7; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">現在: ${prog.lastId || 'ID 1'} で作業中</span>
-      </td>
-      <td>
-        <div>${prog.lastCommit || '未セーブ'}</div>
-      </td>
-      <td>
+    const historyCount = (prog.saveHistory || []).length;
+    const cardEl = document.createElement("div");
+    cardEl.className = "prog-manage-card";
+    cardEl.innerHTML = `
+      <div class="prog-card-header">
+        <span class="prog-card-title">📦 ${escapeHtml(prog.name)}</span>
+        <span class="prog-work-badge">${escapeHtml(prog.lastId || 'ID 1')} で作業中</span>
+      </div>
+      <div class="prog-card-details">
+        <div>📁 ファイル: <span style="color: #cbd5e1;">${escapeHtml(prog.files || '未登録')}</span></div>
+        <div style="margin-top: 3px;">📌 直近のセーブ: <span class="commit-text">${escapeHtml(prog.lastCommit || '未セーブ')}</span></div>
+      </div>
+      <div class="prog-card-actions">
+        <button class="view-history-btn" data-prog-id="${prog.id}">📜 履歴 (${historyCount}件)</button>
         <button class="github-push-btn" data-prog-id="${prog.id}">🚀 GitHubへセーブ</button>
-      </td>
+      </div>
     `;
-    timelineBody.appendChild(tr);
+    progCardList.appendChild(cardEl);
   });
 
   document.querySelectorAll(".github-push-btn").forEach(btn => {
@@ -195,9 +443,239 @@ function renderProgramDashboard() {
       openSaveModal(currentTargetProg);
     });
   });
+
+  document.querySelectorAll(".view-history-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const pid = e.target.closest("button").dataset.progId;
+      const target = programsData.find(p => p.id === pid);
+      openHistoryModal(target);
+    });
+  });
 }
 
-// === タブ3: マスタ設定 & API設定 ===
+function openHistoryModal(prog) {
+  if (!prog) return;
+  document.getElementById("historyModalTitle").innerText = `📜 【${prog.name}】 GitHubセーブ履歴`;
+  const bodyEl = document.getElementById("historyModalBody");
+  bodyEl.innerHTML = "";
+
+  const history = prog.saveHistory || [];
+
+  if (history.length === 0) {
+    bodyEl.innerHTML = `
+      <div style="text-align: center; color: #94a3b8; padding: 40px 20px; font-size: 13px;">
+        💡 まだGitHubへのセーブ履歴がありません。<br>
+        「🚀 GitHubへセーブ」ボタンからファイルをプッシュすると、ここに過去のコミットと変更概要が自動蓄積されます。
+      </div>
+    `;
+  } else {
+    const listContainer = document.createElement("div");
+    listContainer.className = "history-timeline-list";
+
+    history.forEach((item, index) => {
+      const isLatest = (index === 0);
+      const card = document.createElement("div");
+      card.className = "history-card-item";
+
+      card.innerHTML = `
+        <div class="history-item-top">
+          <span class="history-badge-num">${isLatest ? '🟢 最新 (第' + (history.length - index) + '回セーブ)' : '第' + (history.length - index) + '回セーブ'}</span>
+          <span class="history-item-date">🕒 セーブ日時: <strong style="color: #cbd5e1;">${escapeHtml(item.dateStr || '記録なし')}</strong></span>
+        </div>
+        <div class="history-commit-msg">📌 コミットメッセージ: <span style="color: #f8fafc;">${escapeHtml(item.commitMsg)}</span></div>
+        <div class="history-summary-body">
+          <div style="font-weight: 700; color: #38bdf8; margin-bottom: 5px;">📝 詳細な変更履歴 (Change Log):</div>
+          <div>${escapeHtml(item.summary || '変更概要なし')}</div>
+        </div>
+      `;
+      listContainer.appendChild(card);
+    });
+
+    bodyEl.appendChild(listContainer);
+  }
+
+  document.getElementById("historyModalOverlay").classList.add("active");
+}
+
+function initHistoryModalHandlers() {
+  const overlay = document.getElementById("historyModalOverlay");
+  const closeBtn = document.getElementById("closeHistoryModalBtn");
+  const closeFooterBtn = document.getElementById("closeHistoryModalFooterBtn");
+
+  closeBtn.onclick = () => overlay.classList.remove("active");
+  closeFooterBtn.onclick = () => overlay.classList.remove("active");
+}
+
+// === タブ4: 🧠 開発ナレッジ要約 ===
+function renderKnowledgeFilterTabs() {
+  const container = document.getElementById("knowledgeFilterTabs");
+  if (!container) return;
+
+  let html = `<button class="filter-btn ${selectedKnowledgeFilter === 'ALL' ? 'active' : ''}" data-prog="ALL">すべてのプログラム</button>`;
+  
+  programsData.forEach(p => {
+    html += `<button class="filter-btn ${selectedKnowledgeFilter === p.id ? 'active' : ''}" data-prog="${p.id}">${escapeHtml(p.name)}</button>`;
+  });
+
+  container.innerHTML = html;
+
+  container.querySelectorAll(".filter-btn").forEach(btn => {
+    btn.onclick = (e) => {
+      selectedKnowledgeFilter = e.target.dataset.prog;
+      renderKnowledgeFilterTabs();
+      renderKnowledgeList();
+    };
+  });
+}
+
+function renderFormattedSummaryBoxes(rawText) {
+  if (!rawText) return `<div class="section-box-content">要約内容がありません。</div>`;
+
+  const purposeMatch = rawText.match(/■\s*セッションの目的([\s\S]*?)(?=■\s*主な決定事項|$)/i);
+  const decisionMatch = rawText.match(/■\s*主な決定事項[^\n]*([\s\S]*?)(?=■\s*(?:💡\s*)?(?:得られたノウハウ|ノウハウ|知見|重要キーワード)|$)/i);
+  const knowhowMatch = rawText.match(/■\s*(?:💡\s*)?(?:得られたノウハウ|ノウハウ|知見|重要キーワード)[^\n]*([\s\S]*?)$/i);
+
+  if (purposeMatch || decisionMatch || knowhowMatch) {
+    const purposeText = (purposeMatch ? purposeMatch[1] : "").trim();
+    const decisionText = (decisionMatch ? decisionMatch[1] : "").trim();
+    const knowhowText = (knowhowMatch ? knowhowMatch[1] : "").trim();
+
+    return `
+      ${purposeText ? `
+        <div class="knowledge-purpose-box">
+          <strong style="color: #38bdf8;">🎯 セッションの目的:</strong> ${escapeHtml(purposeText)}
+        </div>
+      ` : ''}
+      <div class="knowledge-split-grid">
+        <div class="knowledge-section-box">
+          <div class="section-box-header">🛠️ 主な決定事項・コード改修</div>
+          <div class="section-box-content">${escapeHtml(decisionText || '特に記録なし')}</div>
+        </div>
+        <div class="knowledge-section-box">
+          <div class="section-box-header">💡 得られたノウハウ・知見・重要キーワード</div>
+          <div class="section-box-content">${escapeHtml(knowhowText || '特に記録なし')}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  return `<div class="knowledge-purpose-box" style="white-space: pre-wrap;">${escapeHtml(rawText)}</div>`;
+}
+
+function renderKnowledgeList() {
+  const container = document.getElementById("knowledgeListContainer");
+  const searchInput = document.getElementById("knowledgeSearchInput");
+  const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
+
+  container.innerHTML = "";
+
+  if (knowledgeLogsData.length === 0) {
+    container.innerHTML = `
+      <div style="background: #1e293b; border: 1px dashed #475569; border-radius: 10px; padding: 30px; text-align: center; color: #94a3b8; font-size: 13px;">
+        💡 まだナレッジ要約が保存されていません。<br>
+        AI Studioの画面右上にある <strong>「🧠 ナレッジ要約してマネージャーへ同期」</strong> ボタンを押すと、ここに要約カードが自動蓄積されます。
+      </div>
+    `;
+    return;
+  }
+
+  const filteredIndices = [];
+  knowledgeLogsData.forEach((log, originalIndex) => {
+    const matchProg = (selectedKnowledgeFilter === "ALL") || (log.programId === selectedKnowledgeFilter);
+    const textAll = `${log.title} ${log.programName} ${log.summary} ${log.chatDate || ''} ${log.usedModel || ''}`.toLowerCase();
+    const matchQuery = (query === "") || textAll.includes(query);
+    if (matchProg && matchQuery) {
+      filteredIndices.push(originalIndex);
+    }
+  });
+
+  if (filteredIndices.length === 0) {
+    container.innerHTML = `<div style="color: #94a3b8; font-size: 13px; text-align: center; padding: 20px;">該当するナレッジが見つかりませんでした。</div>`;
+    return;
+  }
+
+  filteredIndices.forEach((origIdx, localIdx) => {
+    const log = knowledgeLogsData[origIdx];
+    const card = document.createElement("div");
+    card.className = "knowledge-card";
+
+    const isTopLatest = (localIdx === 0);
+    const phaseBadgeHtml = isTopLatest
+      ? `<span class="badge-latest-star">⭐ 最新決定版</span>`
+      : `<span class="phase-badge">#${filteredIndices.length - localIdx}</span>`;
+
+    const dateText = log.chatDate ? `📅 ${escapeHtml(log.chatDate)}` : (log.updatedAt ? `📅 ${escapeHtml(log.updatedAt)}` : "");
+    const modelBadge = log.usedModel ? `<span class="badge-model">🤖 ${escapeHtml(log.usedModel)}</span>` : "";
+
+    card.innerHTML = `
+      <div class="knowledge-header">
+        <div class="knowledge-title-group">
+          ${phaseBadgeHtml}
+          <span class="badge-prog">📦 ${escapeHtml(log.programName || '未分類')}</span>
+          <span class="badge-id">ID ${log.accountId}</span>
+          <span class="knowledge-title">${escapeHtml(log.title)}</span>
+          <span class="knowledge-dates">${dateText}</span>
+          ${modelBadge}
+        </div>
+        <div class="knowledge-actions">
+          <button class="order-btn" data-action="up" data-index="${origIdx}" title="上へ移動（最新側へ）">▲ 上へ</button>
+          <button class="order-btn" data-action="down" data-index="${origIdx}" title="下へ移動（過去側へ）">▼ 下へ</button>
+          <button class="copy-prompt-btn" data-id="${log.id}">📋 引継ぎプロンプトをコピー</button>
+          <a class="jump-chat-btn" href="${escapeHtml(log.url)}" target="_blank">🔗 AI Studioを開く</a>
+          <button class="del-card-btn" data-id="${log.id}">削除</button>
+        </div>
+      </div>
+      ${renderFormattedSummaryBoxes(log.summary)}
+    `;
+
+    card.querySelector('[data-action="up"]').onclick = () => {
+      if (origIdx > 0) {
+        const temp = knowledgeLogsData[origIdx];
+        knowledgeLogsData[origIdx] = knowledgeLogsData[origIdx - 1];
+        knowledgeLogsData[origIdx - 1] = temp;
+        saveAllData();
+        renderKnowledgeList();
+      }
+    };
+
+    card.querySelector('[data-action="down"]').onclick = () => {
+      if (origIdx < knowledgeLogsData.length - 1) {
+        const temp = knowledgeLogsData[origIdx];
+        knowledgeLogsData[origIdx] = knowledgeLogsData[origIdx + 1];
+        knowledgeLogsData[origIdx + 1] = temp;
+        saveAllData();
+        renderKnowledgeList();
+      }
+    };
+
+    card.querySelector(".copy-prompt-btn").onclick = () => {
+      const promptToCopy = `あなたはプロのエンジニアです。前回のチャット（${log.title}）から作業を引き継ぎます。\n以下は前回のセッションで決定・実装された要約と知見です。これを前提として開発を続行してください。\n\n---\n${log.summary}\n---`;
+      navigator.clipboard.writeText(promptToCopy).then(() => {
+        alert("✅ 最新の引継ぎ用プロンプトをクリップボードにコピーしました！\n新しいAI Studioのチャットに貼り付けてそのまま作業を再開できます。");
+      });
+    };
+
+    card.querySelector(".del-card-btn").onclick = () => {
+      if (confirm(`「${log.title}」のナレッジカードを削除してもよろしいですか？`)) {
+        knowledgeLogsData = knowledgeLogsData.filter(l => l.id !== log.id);
+        chrome.storage.local.set({ knowledgeLogs: knowledgeLogsData }, () => {
+          renderKnowledgeList();
+        });
+      }
+    };
+
+    container.appendChild(card);
+  });
+}
+
+function escapeHtml(str) {
+  return (str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// === タブ3: マスタ設定 ===
 function renderMasterSettings() {
   const tbody = document.getElementById("masterTableBody");
   tbody.innerHTML = "";
@@ -225,230 +703,15 @@ function renderMasterSettings() {
       if (confirm(`「${programsData[idx].name}」を削除してもよろしいですか？`)) {
         programsData.splice(idx, 1);
         renderMasterSettings();
+        renderKnowledgeFilterTabs();
       }
     });
   });
 
-  // API設定の反映
   document.getElementById("githubToken").value = apiConfig.githubToken || "";
   document.getElementById("githubRepo").value = apiConfig.githubRepo || "";
   document.getElementById("geminiApiKey").value = apiConfig.geminiApiKey || "";
   document.getElementById("geminiModelName").value = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
-}
-
-// === タブ4: チャット履歴ログ ===
-function renderChatLogs() {
-  const listContainer = document.getElementById("logListContainer");
-  listContainer.innerHTML = "";
-
-  if (chatLogsData.length === 0) {
-    listContainer.innerHTML = `<div style="color: #64748b; font-size: 11px; padding: 12px; text-align: center;">ログがありません。<br>AI Studio画面の「💾 チャットをHTML保存」を押してください。</div>`;
-    renderChatDetail(null);
-    return;
-  }
-
-  chatLogsData.forEach(log => {
-    const item = document.createElement("div");
-    item.className = `log-item ${currentSelectedLogId === log.id ? 'active' : ''}`;
-    item.innerHTML = `
-      <div class="log-item-title">${log.title}</div>
-      <div class="log-item-meta">
-        <span class="log-item-badge">ID ${log.accountId}</span>
-        <span>${log.dateStr}</span>
-      </div>
-      <div style="font-size: 10px; color: #38bdf8; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-        📦 ${log.programName}
-      </div>
-    `;
-
-    item.addEventListener("click", () => {
-      currentSelectedLogId = log.id;
-      renderChatLogs();
-      renderChatDetail(log.id);
-    });
-
-    listContainer.appendChild(item);
-  });
-
-  if (!currentSelectedLogId && chatLogsData.length > 0) {
-    currentSelectedLogId = chatLogsData[0].id;
-    renderChatDetail(currentSelectedLogId);
-  }
-}
-
-function renderChatDetail(logId) {
-  const viewerTitle = document.getElementById("viewerSessionTitle");
-  const viewerMeta = document.getElementById("viewerSessionMeta");
-  const viewerBody = document.getElementById("viewerBodyContainer");
-  const delBtn = document.getElementById("deleteCurrentLogBtn");
-
-  if (!logId) {
-    viewerTitle.innerText = "セッションを選択してください";
-    viewerMeta.innerText = "";
-    viewerBody.innerHTML = `<div style="text-align: center; color: #64748b; margin-top: 100px; font-size: 13px;">👈 左の一覧から閲覧したいチャットセッションを選択してください。</div>`;
-    delBtn.style.display = "none";
-    return;
-  }
-
-  const log = chatLogsData.find(l => l.id === logId);
-  if (!log) return;
-
-  viewerTitle.innerText = log.title;
-  viewerMeta.innerText = `(ID ${log.accountId} | ${log.dateStr} | ${log.programName})`;
-  delBtn.style.display = "inline-block";
-  viewerBody.innerHTML = "";
-
-  log.messages.forEach(msg => {
-    const bubble = document.createElement("div");
-    bubble.className = `chat-bubble ${msg.role}`;
-    const authorLabel = msg.role === "user" ? "👤 あなた (指示・プロンプト)" : "🤖 AI Studio (返答・要約)";
-    
-    bubble.innerHTML = `
-      <div class="bubble-header">
-        <span>${authorLabel}</span>
-        <button class="copy-text-btn">📋 本文コピー</button>
-      </div>
-      <div class="bubble-content">${escapeHtml(msg.text)}</div>
-    `;
-
-    bubble.querySelector(".copy-text-btn").addEventListener("click", (e) => {
-      navigator.clipboard.writeText(msg.text).then(() => {
-        const btn = e.target;
-        btn.innerText = "✅ コピー完了！";
-        setTimeout(() => { btn.innerText = "📋 本文コピー"; }, 1500);
-      });
-    });
-
-    viewerBody.appendChild(bubble);
-  });
-}
-
-function escapeHtml(str) {
-  return (str || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-// === イベント登録 ===
-function attachCardEvents() {
-  document.querySelectorAll(".limit-badge-btn").forEach(btn => {
-    btn.addEventListener("click", (e) => {
-      const id = e.target.dataset.account;
-      const willBeLimited = !accountsData[id].isRateLimited;
-      accountsData[id].isRateLimited = willBeLimited;
-      accountsData[id].isManual = true;
-      if (willBeLimited) accountsData[id].meterLevel = 100;
-      saveAllData();
-      updateCardValues();
-    });
-  });
-
-  document.querySelectorAll(".prog-select").forEach(sel => {
-    sel.addEventListener("change", (e) => {
-      const id = e.target.dataset.account;
-      const val = e.target.value;
-      accountsData[id].currentProgramId = val;
-      e.target.className = val === "" ? "prog-select unselected" : "prog-select selected";
-      saveAllData();
-    });
-  });
-
-  document.querySelectorAll(".google-id-input").forEach(el => el.addEventListener("input", e => { accountsData[e.target.dataset.account].googleId = e.target.value; saveAllData(); }));
-  document.querySelectorAll(".theme-input").forEach(el => el.addEventListener("input", e => { accountsData[e.target.dataset.account].theme = e.target.value; saveAllData(); }));
-  document.querySelectorAll(".notes-area").forEach(el => el.addEventListener("input", e => { accountsData[e.target.dataset.account].notes = e.target.value; saveAllData(); }));
-
-  document.querySelectorAll(".meter-segments").forEach(meter => {
-    meter.addEventListener("click", (e) => {
-      const seg = e.target.closest(".segment");
-      if (!seg) return;
-      const id = meter.dataset.account;
-      const step = parseInt(seg.dataset.step, 10);
-
-      if (accountsData[id].meterLevel === step) {
-        accountsData[id].meterLevel = 0;
-        accountsData[id].isManual = false;
-        accountsData[id].isRateLimited = false;
-      } else {
-        accountsData[id].meterLevel = step;
-        accountsData[id].isManual = true;
-        accountsData[id].isRateLimited = (step === 100);
-      }
-      saveAllData();
-      updateCardValues();
-    });
-  });
-
-  document.querySelectorAll(".jump-btn").forEach(btn => {
-    btn.addEventListener("click", (e) => {
-      const id = parseInt(e.target.dataset.account, 10);
-      const data = accountsData[id];
-      if (data && data.tabId) {
-        chrome.tabs.update(data.tabId, { active: true }, tab => {
-          if (chrome.runtime.lastError || !tab) chrome.tabs.create({ url: `https://aistudio.google.com/u/${id - 1}/` });
-        });
-      } else {
-        chrome.tabs.create({ url: `https://aistudio.google.com/u/${id - 1}/` });
-      }
-    });
-  });
-}
-
-function updateCardValues() {
-  if (!isDataLoaded) return;
-
-  for (let id = 1; id <= 4; id++) {
-    const data = accountsData[id] || {};
-    const card = document.getElementById(`card-${id}`);
-    const badgeBtn = document.getElementById(`badge-${id}`);
-
-    const isLimit = data.isRateLimited || data.meterLevel === 100;
-    if (card) {
-      if (isLimit) card.classList.add("rate-limited");
-      else card.classList.remove("rate-limited");
-    }
-
-    if (badgeBtn) {
-      if (isLimit) {
-        badgeBtn.classList.add("active");
-        badgeBtn.innerText = "⚠️ リミット到達中";
-      } else {
-        badgeBtn.classList.remove("active");
-        badgeBtn.innerText = "⚠️ リミット未達";
-      }
-    }
-
-    const idInput = document.querySelector(`.google-id-input[data-account="${id}"]`);
-    if (idInput && document.activeElement !== idInput) idInput.value = data.googleId || "";
-
-    const progSelect = document.querySelector(`.prog-select[data-account="${id}"]`);
-    if (progSelect) {
-      progSelect.value = data.currentProgramId || "";
-      progSelect.className = !data.currentProgramId ? "prog-select unselected" : "prog-select selected";
-    }
-
-    const themeInput = document.querySelector(`.theme-input[data-account="${id}"]`);
-    if (themeInput && document.activeElement !== themeInput) themeInput.value = data.theme || "";
-
-    const notesArea = document.querySelector(`.notes-area[data-account="${id}"]`);
-    if (notesArea && document.activeElement !== notesArea) notesArea.value = data.notes || "";
-
-    const timeText = document.getElementById(`time-${id}`);
-    if (timeText) timeText.innerText = `⏱ ${formatElapsedTime(data.startTime)}`;
-
-    const tokenText = document.getElementById(`token-${id}`);
-    if (tokenText) tokenText.innerText = `📊 ${(data.tokens || 0).toLocaleString()} tk`;
-
-    const meterContainer = document.getElementById(`meter-${id}`);
-    if (meterContainer) {
-      const currentLevel = data.meterLevel || 0;
-      meterContainer.querySelectorAll(".segment").forEach(seg => {
-        const step = parseInt(seg.dataset.step, 10);
-        seg.className = "segment";
-        if (currentLevel >= step) seg.classList.add(`active-${step}`);
-      });
-    }
-  }
 }
 
 function initNavigation() {
@@ -462,7 +725,10 @@ function initNavigation() {
 
       if (targetId === "tab2") renderProgramDashboard();
       if (targetId === "tab3") renderMasterSettings();
-      if (targetId === "tab4") renderChatLogs();
+      if (targetId === "tab4") {
+        renderKnowledgeFilterTabs();
+        renderKnowledgeList();
+      }
     });
   });
 
@@ -471,8 +737,6 @@ function initNavigation() {
       document.querySelectorAll(".period-btn").forEach(b => b.classList.remove("active"));
       e.target.classList.add("active");
       currentPeriod = e.target.dataset.period;
-      const titles = { today: "本日のリソース配分グラフ (Today)", week: "今週のリソース配分グラフ (Week)", month: "今月のリソース配分グラフ (Month)" };
-      document.getElementById("chartPeriodTitle").innerText = `📊 プログラム別 ${titles[currentPeriod]}`;
       renderProgramDashboard();
     });
   });
@@ -486,7 +750,8 @@ function initNavigation() {
       tokensMonth: 0,
       hoursWeek: 0,
       lastCommit: "未セーブ",
-      lastId: "ID 1"
+      lastId: "ID 1",
+      saveHistory: []
     });
     renderMasterSettings();
   });
@@ -514,7 +779,8 @@ function initNavigation() {
           tokensMonth: old.tokensMonth || 0,
           hoursWeek: old.hoursWeek || 0,
           lastCommit: old.lastCommit || "未セーブ",
-          lastId: old.lastId || "ID 1"
+          lastId: old.lastId || "ID 1",
+          saveHistory: old.saveHistory || []
         });
       }
     });
@@ -522,10 +788,10 @@ function initNavigation() {
     programsData = updated;
     saveAllData();
     setupCards();
+    renderKnowledgeFilterTabs();
     alert("✅ プログラムマスタを正常に保存しました！");
   });
 
-  // API設定保存
   document.getElementById("saveApiConfigBtn").addEventListener("click", () => {
     apiConfig.githubToken = document.getElementById("githubToken").value.trim();
     apiConfig.githubRepo = document.getElementById("githubRepo").value.trim();
@@ -533,38 +799,22 @@ function initNavigation() {
     apiConfig.geminiModelName = document.getElementById("geminiModelName").value.trim() || "gemini-3.5-flash-lite";
 
     chrome.storage.local.set({ apiConfig }, () => {
+      updateActiveModelBadge();
       alert("✅ GitHub & Gemini API設定を保存しました！");
     });
   });
 
-  // ログ削除
-  document.getElementById("deleteCurrentLogBtn").addEventListener("click", () => {
-    if (!currentSelectedLogId) return;
-    if (confirm("このセッションログを削除してもよろしいですか？")) {
-      chatLogsData = chatLogsData.filter(l => l.id !== currentSelectedLogId);
-      currentSelectedLogId = null;
-      chrome.storage.local.set({ chatLogs: chatLogsData }, () => {
-        renderChatLogs();
-      });
-    }
-  });
-
-  document.getElementById("clearAllLogsBtn").addEventListener("click", () => {
-    if (confirm("保存されているすべてのチャットログを消去しますか？")) {
-      chatLogsData = [];
-      currentSelectedLogId = null;
-      chrome.storage.local.set({ chatLogs: [] }, () => {
-        renderChatLogs();
-      });
-    }
-  });
+  const searchInput = document.getElementById("knowledgeSearchInput");
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      renderKnowledgeList();
+    });
+  }
 }
 
 function saveAllData() {
-  chrome.storage.local.set({ accounts: accountsData, programs: programsData, chatLogs: chatLogsData, apiConfig: apiConfig });
+  chrome.storage.local.set({ accounts: accountsData, programs: programsData, knowledgeLogs: knowledgeLogsData, apiConfig: apiConfig });
 }
-
-// === GitHubセーブモーダル ＆ 差分比較・Gemini要約・プッシュ ===
 
 function initModalHandlers() {
   const overlay = document.getElementById("saveModalOverlay");
@@ -578,9 +828,7 @@ function initModalHandlers() {
 
   closeBtn.onclick = () => overlay.classList.remove("active");
   cancelBtn.onclick = () => overlay.classList.remove("active");
-
   dropzone.onclick = () => fileSelector.click();
-
   dropzone.ondragover = (e) => { e.preventDefault(); dropzone.classList.add("dragover"); };
   dropzone.ondragleave = () => dropzone.classList.remove("dragover");
   dropzone.ondrop = (e) => {
@@ -588,12 +836,8 @@ function initModalHandlers() {
     dropzone.classList.remove("dragover");
     handleSelectedFiles(e.dataTransfer.files);
   };
+  fileSelector.onchange = (e) => handleSelectedFiles(e.target.files);
 
-  fileSelector.onchange = (e) => {
-    handleSelectedFiles(e.target.files);
-  };
-
-  // モーダル内のリポジトリ入力が変更されたらapiConfigにも自動反映
   repoInput.oninput = (e) => {
     apiConfig.githubRepo = e.target.value.trim();
     chrome.storage.local.set({ apiConfig });
@@ -641,7 +885,6 @@ function readFileAsText(file) {
   });
 }
 
-// 差分取得 ＆ Gemini要約
 async function analyzeDiffAndGenerateSummary() {
   const banner = document.getElementById("statusBanner");
   banner.className = "status-banner active";
@@ -660,9 +903,7 @@ async function analyzeDiffAndGenerateSummary() {
       const oldCode = await fetchOldFileFromGitHub(f.name);
       if (oldCode === null) {
         diffs.push(`【新規追加ファイル: ${f.name}】\n内容の一部:\n${f.content.substring(0, 500)}...`);
-      } else if (oldCode === f.content) {
-        // 変更なし
-      } else {
+      } else if (oldCode !== f.content) {
         diffs.push(`【変更ファイル: ${f.name}】\n差分スニペット:\n${createSnippetDiff(oldCode, f.content)}`);
       }
     }
@@ -687,7 +928,6 @@ async function analyzeDiffAndGenerateSummary() {
   }
 }
 
-// GitHubから過去ファイル取得
 async function fetchOldFileFromGitHub(path) {
   const [owner, repo] = apiConfig.githubRepo.split("/");
   if (!owner || !repo) return null;
@@ -732,7 +972,6 @@ function createSnippetDiff(oldStr, newStr) {
   return diffLines.join("\n") || "コード全体の更新";
 }
 
-// Gemini API呼び出し＆日本語クレンジング
 async function callGeminiAPI(diffText) {
   const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
@@ -768,7 +1007,6 @@ ${diffText || "初回登録・ベースファイル一式"}
   const data = await res.json();
   let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-  // 余計なJSONラベルや記号を強力にクレンジング
   rawText = rawText
     .replace(/```[a-z]*\n?/gi, '')
     .replace(/```/g, '')
@@ -790,23 +1028,14 @@ ${diffText || "初回登録・ベースファイル一式"}
   };
 }
 
-// GitHubへプッシュ実行
 async function executeGitHubPush() {
   const repoInputVal = document.getElementById("modalRepoInput").value.trim();
   const commitMsg = document.getElementById("commitMessageInput").value.trim();
   const summary = document.getElementById("changeSummaryArea").value.trim();
   const banner = document.getElementById("statusBanner");
 
-  if (!repoInputVal) {
-    alert("リポジトリ名を入力してください（例: username/AIStudio-Manager）。");
-    return;
-  }
-  if (!commitMsg) {
-    alert("コミットメッセージを入力してください。");
-    return;
-  }
-  if (loadedLocalFiles.length === 0) {
-    alert("プッシュするファイルが選択されていません。");
+  if (!repoInputVal || !commitMsg || loadedLocalFiles.length === 0) {
+    alert("必須項目（リポジトリ名、コミットメッセージ、ファイル選択）を確認してください。");
     return;
   }
 
@@ -814,33 +1043,49 @@ async function executeGitHubPush() {
   chrome.storage.local.set({ apiConfig });
 
   banner.className = "status-banner active";
-  banner.innerText = "🚀 GitHubへ接続中（リポジトリ確認 ＆ コミット中）...";
+  banner.innerText = "🚀 GitHubへ接続中...";
 
   const [owner, repo] = repoInputVal.split("/");
   if (!owner || !repo) {
-    alert("リポジトリ名が不正です。「ユーザー名/リポジトリ名」の形式で入力してください。");
+    alert("リポジトリ名の形式が不正です（例: user/repo）。");
     return;
   }
 
   try {
-    // 1. リポジトリの存在チェック（無ければ自動作成）
     await ensureRepositoryExists(owner, repo);
 
-    // 2. CHANGELOG.mdの自動更新
     const now = new Date();
-    const changelogEntry = `\n\n## [${now.toLocaleString()}] ${commitMsg}\n\n${summary}\n`;
-    let oldChangelog = await fetchOldFileFromGitHub("CHANGELOG.md") || "# プロジェクト変更履歴\n";
-    const updatedChangelog = oldChangelog + changelogEntry;
+    const dateFormatted = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const newLogEntry = `### [${dateFormatted}] ${commitMsg}\n\n${summary}\n\n---\n`;
 
-    const allFilesToPush = [...loadedLocalFiles, { name: "CHANGELOG.md", content: updatedChangelog }];
+    let oldReadme = await fetchOldFileFromGitHub("README.md") || "";
+    let updatedReadme = "";
+    const headerTitle = `# 📦 ${currentTargetProg ? currentTargetProg.name : repo}\n\nAI Studioと連携して自動管理・同期されているプロジェクトです。\n\n## 📝 更新履歴 (Change Log)\n\n`;
 
-    // 3. 全ファイルを一括プッシュ
+    if (!oldReadme || oldReadme.includes("Created automatically by Studio Manager")) {
+      updatedReadme = headerTitle + newLogEntry;
+    } else if (oldReadme.includes("## 📝 更新履歴 (Change Log)")) {
+      updatedReadme = oldReadme.replace("## 📝 更新履歴 (Change Log)\n\n", `## 📝 更新履歴 (Change Log)\n\n${newLogEntry}`);
+    } else {
+      updatedReadme = oldReadme + `\n\n## 📝 更新履歴 (Change Log)\n\n${newLogEntry}`;
+    }
+
+    const filteredFiles = loadedLocalFiles.filter(f => f.name !== "README.md");
+    const allFilesToPush = [...filteredFiles, { name: "README.md", content: updatedReadme }];
+
     banner.innerText = `📦 ファイル群をコミット中 (全 ${allFilesToPush.length} ファイル)...`;
     for (const file of allFilesToPush) {
       await pushSingleFileToGitHub(owner, repo, file.name, file.content, commitMsg);
     }
 
-    // 4. マネージャーの記録更新
+    if (!currentTargetProg.saveHistory) currentTargetProg.saveHistory = [];
+    currentTargetProg.saveHistory.unshift({
+      timestamp: now.getTime(),
+      dateStr: dateFormatted,
+      commitMsg: commitMsg,
+      summary: summary
+    });
+
     currentTargetProg.lastCommit = commitMsg;
     saveAllData();
     renderProgramDashboard();
@@ -858,7 +1103,6 @@ async function executeGitHubPush() {
   }
 }
 
-// リポジトリ自動作成
 async function ensureRepositoryExists(owner, repo) {
   const checkUrl = `https://api.github.com/repos/${owner}/${repo}`;
   const res = await fetch(checkUrl, {
@@ -877,33 +1121,17 @@ async function ensureRepositoryExists(owner, repo) {
         "Content-Type": "application/json",
         "Accept": "application/vnd.github.v3+json"
       },
-      body: JSON.stringify({
-        name: repo,
-        description: "Created automatically by Studio Manager",
-        auto_init: true
-      })
+      body: JSON.stringify({ name: repo, description: "Managed by Studio Manager", auto_init: true })
     });
-
-    if (!createRes.ok) {
-      const err = await createRes.json();
-      throw new Error(`リポジトリ自動作成に失敗: ${err.message || createRes.statusText}`);
-    }
+    if (!createRes.ok) throw new Error("リポジトリ自動作成に失敗しました。");
     await new Promise(r => setTimeout(r, 1500));
   }
 }
 
-// 1ファイルのプッシュ
 async function pushSingleFileToGitHub(owner, repo, path, content, commitMessage) {
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-  
   let sha = undefined;
-  const getRes = await fetch(url, {
-    headers: {
-      "Authorization": `token ${apiConfig.githubToken}`,
-      "Accept": "application/vnd.github.v3+json"
-    }
-  });
-
+  const getRes = await fetch(url, { headers: { "Authorization": `token ${apiConfig.githubToken}`, "Accept": "application/vnd.github.v3+json" } });
   if (getRes.ok) {
     const data = await getRes.json();
     sha = data.sha;
@@ -916,33 +1144,22 @@ async function pushSingleFileToGitHub(owner, repo, path, content, commitMessage)
 
   const putRes = await fetch(url, {
     method: "PUT",
-    headers: {
-      "Authorization": `token ${apiConfig.githubToken}`,
-      "Content-Type": "application/json",
-      "Accept": "application/vnd.github.v3+json"
-    },
-    body: JSON.stringify({
-      message: `${commitMessage} (${path})`,
-      content: base64Content,
-      sha: sha
-    })
+    headers: { "Authorization": `token ${apiConfig.githubToken}`, "Content-Type": "application/json", "Accept": "application/vnd.github.v3+json" },
+    body: JSON.stringify({ message: `${commitMessage} (${path})`, content: base64Content, sha: sha })
   });
 
-  if (!putRes.ok) {
-    const err = await putRes.json();
-    throw new Error(`${path} のプッシュ失敗: ${err.message || putRes.statusText}`);
-  }
+  if (!putRes.ok) throw new Error(`${path} のプッシュ失敗`);
 }
 
-// 起動時の初期化
 function bootstrap() {
   initNavigation();
   initModalHandlers();
+  initHistoryModalHandlers();
   updateCountdown();
 
-  chrome.storage.local.get(["accounts", "programs", "chatLogs", "apiConfig"], (res) => {
+  chrome.storage.local.get(["accounts", "programs", "knowledgeLogs", "apiConfig"], (res) => {
     if (res.programs && res.programs.length > 0) programsData = res.programs;
-    if (res.chatLogs) chatLogsData = res.chatLogs;
+    if (res.knowledgeLogs) knowledgeLogsData = res.knowledgeLogs;
     if (res.apiConfig) apiConfig = Object.assign(apiConfig, res.apiConfig);
     if (res.accounts) {
       for (let i = 1; i <= 4; i++) {
@@ -952,7 +1169,10 @@ function bootstrap() {
       }
     }
 
+    cleanupAndMigrateSaveHistory();
+
     isDataLoaded = true;
+    updateActiveModelBadge();
     setupCards();
     renderProgramDashboard();
     renderMasterSettings();
@@ -963,26 +1183,35 @@ function bootstrap() {
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === "local") {
+      if (changes.apiConfig) {
+        apiConfig = Object.assign(apiConfig, changes.apiConfig.newValue || {});
+        updateActiveModelBadge();
+      }
       if (changes.accounts) {
         const newAccounts = changes.accounts.newValue;
         if (newAccounts) {
           for (let i = 1; i <= 4; i++) {
             if (newAccounts[i]) {
               accountsData[i].tokens = newAccounts[i].tokens;
+              accountsData[i].currentChatTokens = newAccounts[i].currentChatTokens;
+              accountsData[i].meterLevel = newAccounts[i].meterLevel;
+              accountsData[i].statusMode = newAccounts[i].statusMode;
+              accountsData[i].isRateLimited = newAccounts[i].isRateLimited;
+              accountsData[i].hasError = newAccounts[i].hasError;
               accountsData[i].startTime = newAccounts[i].startTime;
               accountsData[i].tabId = newAccounts[i].tabId;
-              if (newAccounts[i].isRateLimited) {
-                accountsData[i].isRateLimited = true;
-                accountsData[i].meterLevel = 100;
-              }
             }
           }
           updateCardValues();
         }
       }
-      if (changes.chatLogs) {
-        chatLogsData = changes.chatLogs.newValue || [];
-        renderChatLogs();
+      if (changes.knowledgeLogs) {
+        knowledgeLogsData = changes.knowledgeLogs.newValue || [];
+        renderKnowledgeList();
+      }
+      if (changes.programs) {
+        programsData = changes.programs.newValue || [];
+        renderProgramDashboard();
       }
     }
   });
@@ -995,12 +1224,13 @@ function syncBackgroundStats() {
         const bgAcc = res.accounts[i];
         if (bgAcc) {
           accountsData[i].tokens = bgAcc.tokens;
+          accountsData[i].currentChatTokens = bgAcc.currentChatTokens;
+          accountsData[i].meterLevel = bgAcc.meterLevel;
+          accountsData[i].statusMode = bgAcc.statusMode;
+          accountsData[i].isRateLimited = bgAcc.isRateLimited;
+          accountsData[i].hasError = bgAcc.hasError;
           accountsData[i].startTime = bgAcc.startTime;
           accountsData[i].tabId = bgAcc.tabId;
-          if (bgAcc.isRateLimited) {
-            accountsData[i].isRateLimited = true;
-            accountsData[i].meterLevel = 100;
-          }
         }
       }
       updateCardValues();
