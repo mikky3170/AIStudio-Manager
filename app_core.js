@@ -1,4 +1,4 @@
-// [v1.2.0 作業版 Rev.1] コアデータ定義・状態管理・GitHubプッシュ・プリフライト診断エンジンの独立分割
+// [v1.2.0 作業版 Rev.2] プログラムマスタのユーザー編集データ完全保護＆ID照合保存による永続化の恒久対策
 const APP_DEFAULT_VERSION = "v1.2.0";
 
 function createInitialAccounts() {
@@ -281,7 +281,7 @@ let currentPlanVerType = "minor";
 let loadedLocalFiles = [];
 let currentTriageData = null;
 let tokenCorrectTargetId = null;
-let pendingPushPayload = null; // 🛡️ 事前診断（プリフライト）通過待ちのプッシュデータ
+let pendingPushPayload = null;
 
 const openedPlanIds = new Set();
 const openedInboxProgIds = new Set();
@@ -433,7 +433,7 @@ function resolveCanonicalProgram(item) {
   return programsData.find(p => p.id === "prog_10") || programsData[0];
 }
 
-// 🛡️ 重複プログラムの名寄せ ＆ 構成ファイルの実ファイル名永続保護マイグレーション
+// 🛡️ 恒久対策：ユーザー編集データの完全不可侵保護 ＆ 不足枠の安全シード処理
 function cleanupAndMigrateSaveHistory() {
   let hasChanges = false;
 
@@ -442,133 +442,59 @@ function cleanupAndMigrateSaveHistory() {
     return match ? String(parseInt(match[1], 10)).padStart(2, '0') : null;
   }
 
-  const mergedList = [];
+  // programsData が空の場合はデフォルトで初期化
+  if (!Array.isArray(programsData) || programsData.length === 0) {
+    programsData = JSON.parse(JSON.stringify(defaultPrograms));
+    chrome.storage.local.set({ programs: programsData });
+    return;
+  }
+
   const oldIdToCanonicalIdMap = {};
 
+  // 1. 01〜10の標準枠で不足しているものがあれば安全に補填（ユーザー既存データは一切上書きしない）
   defaultPrograms.forEach(dp => {
-    const prefix = extractPrefixNum(dp.name);
-
-    const candidates = programsData.filter(p => {
+    const dpPrefix = extractPrefixNum(dp.name);
+    const existingIndex = programsData.findIndex(p => {
       const pPrefix = extractPrefixNum(p.name);
-      return (pPrefix && pPrefix === prefix) || (p.name && p.name.includes(dp.name.substring(3)));
+      return (pPrefix && pPrefix === dpPrefix) || p.id === dp.id;
     });
 
-    if (candidates.length === 0) {
-      mergedList.push(JSON.parse(JSON.stringify(dp)));
+    if (existingIndex === -1) {
+      // 未作成の標準枠を末尾に追加
+      programsData.push(JSON.parse(JSON.stringify(dp)));
+      hasChanges = true;
     } else {
-      let bestCustomInstruction = dp.customInstruction || "";
-      let bestGithubRepo = dp.githubRepo || "";
-      let bestVersion = dp.version || "v1.0.0";
-      let isWebPublish = dp.isWebPublish;
-      let bestFiles = "";
-      let allPlans = [];
-      let allNotes = [];
-      let allHistory = [];
+      // 既存プログラム：ユーザーが編集した全項目を最優先。未定義のプロパティのみデフォルトから安全補完
+      const current = programsData[existingIndex];
 
-      candidates.forEach(cand => {
-        if (cand.id && cand.id !== dp.id) {
-          oldIdToCanonicalIdMap[cand.id] = dp.id;
-        }
-
-        const cInst = (cand.customInstruction || "").trim();
-        if (cInst.length > bestCustomInstruction.trim().length) {
-          bestCustomInstruction = cInst;
-        }
-        if (!bestGithubRepo && cand.githubRepo) {
-          bestGithubRepo = cand.githubRepo;
-        }
-        if (cand.version && cand.version !== "v1.0.0") {
-          bestVersion = cand.version;
-        }
-        if (cand.isWebPublish !== undefined) {
-          isWebPublish = cand.isWebPublish;
-        }
-
-        if (cand.files && cand.files.trim().length > 0) {
-          if (cand.files !== "index.html") {
-            bestFiles = cand.files.trim();
-          } else if (!bestFiles) {
-            bestFiles = cand.files.trim();
-          }
-        }
-
-        if (Array.isArray(cand.enhancePlans)) allPlans.push(...cand.enhancePlans);
-        if (Array.isArray(cand.inboxNotes)) allNotes.push(...cand.inboxNotes);
-        if (Array.isArray(cand.saveHistory)) allHistory.push(...cand.saveHistory);
-      });
-
-      if (dp.id === "prog_1") {
-        bestFiles = "manifest.json, background.js, display.html, app_core.js, app_ui.js, app_concierge.js, content.js";
-        bestVersion = "v1.2.0";
+      if (current.id !== dp.id && !programsData.some(p => p.id === dp.id)) {
+        oldIdToCanonicalIdMap[current.id] = dp.id;
+        current.id = dp.id;
         hasChanges = true;
       }
-      if (dp.id === "prog_2" && (!bestFiles || bestFiles === "index.html")) {
-        bestFiles = "start_studio.bat, thinking_studio.html";
+
+      if (current.isWebPublish === undefined) { current.isWebPublish = dp.isWebPublish; hasChanges = true; }
+      if (!current.files && dp.files) { current.files = dp.files; hasChanges = true; }
+      if (!current.customInstruction && dp.customInstruction) { current.customInstruction = dp.customInstruction; hasChanges = true; }
+      if (!Array.isArray(current.inboxNotes)) { current.inboxNotes = []; hasChanges = true; }
+      if (!Array.isArray(current.saveHistory)) { current.saveHistory = dp.saveHistory || []; hasChanges = true; }
+      if (!Array.isArray(current.enhancePlans)) { current.enhancePlans = dp.enhancePlans || []; hasChanges = true; }
+
+      // 01番(Studioマネージャー)の稼働バージョンのみv1.2.0に維持
+      if (current.id === "prog_1" && current.version !== "v1.2.0") {
+        current.version = "v1.2.0";
         hasChanges = true;
       }
-      if (dp.id === "prog_9" && (!bestFiles || bestFiles === "index.html")) {
-        bestFiles = "KK_Dashboard.html";
-        hasChanges = true;
-      }
-      if (!bestFiles) bestFiles = dp.files || "";
-
-      const uniquePlans = [];
-      const planIds = new Set();
-      allPlans.forEach(pl => {
-        if (!planIds.has(pl.id)) {
-          planIds.add(pl.id);
-          uniquePlans.push(pl);
-        }
-      });
-
-      const uniqueNotes = [];
-      const noteIds = new Set();
-      allNotes.forEach(no => {
-        if (!noteIds.has(no.id)) {
-          noteIds.add(no.id);
-          uniqueNotes.push(no);
-        }
-      });
-
-      const uniqueHistory = [];
-      const histSignatures = new Set();
-      allHistory.forEach(hi => {
-        const sig = `${hi.version}_${hi.commitMsg}`;
-        if (!histSignatures.has(sig)) {
-          histSignatures.add(sig);
-          uniqueHistory.push(hi);
-        }
-      });
-      uniqueHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-      const mergedProg = {
-        id: dp.id,
-        name: dp.name,
-        version: bestVersion,
-        githubRepo: bestGithubRepo,
-        isWebPublish: isWebPublish,
-        customInstruction: bestCustomInstruction,
-        files: bestFiles,
-        tokensWeek: dp.tokensWeek || 0,
-        tokensMonth: dp.tokensMonth || 0,
-        hoursWeek: dp.hoursWeek || 0,
-        lastCommit: uniqueHistory[0] ? uniqueHistory[0].commitMsg : (dp.lastCommit || "未セーブ"),
-        inboxNotes: uniqueNotes,
-        saveHistory: uniqueHistory.length > 0 ? uniqueHistory : (dp.saveHistory || []),
-        enhancePlans: uniquePlans.length > 0 ? uniquePlans : (dp.enhancePlans || [])
-      };
-
-      if (mergedProg.id === "prog_1") mergedProg.version = "v1.2.0";
-
-      mergedList.push(mergedProg);
-      if (candidates.length > 1) hasChanges = true;
     }
   });
 
-  programsData = mergedList;
-
+  // 2. ナレッジログ（knowledgeLogsData）の旧IDマッピング救出
   let knowledgeUpdated = false;
   knowledgeLogsData.forEach(log => {
+    if (oldIdToCanonicalIdMap[log.programId]) {
+      log.programId = oldIdToCanonicalIdMap[log.programId];
+      knowledgeUpdated = true;
+    }
     const isMapped = programsData.some(p => p.id === log.programId);
     if (!isMapped || log.programId === "prog_unassigned") {
       const targetProg = resolveCanonicalProgram(log);
@@ -584,30 +510,26 @@ function cleanupAndMigrateSaveHistory() {
     chrome.storage.local.set({ knowledgeLogs: knowledgeLogsData });
   }
 
+  // 3. アカウント選択IDの救出
   for (let i = 1; i <= 4; i++) {
     const acc = accountsData[i];
     if (acc && acc.currentProgramId) {
       if (oldIdToCanonicalIdMap[acc.currentProgramId]) {
         acc.currentProgramId = oldIdToCanonicalIdMap[acc.currentProgramId];
         hasChanges = true;
-      } else {
-        const exists = programsData.some(p => p.id === acc.currentProgramId);
-        if (!exists) {
-          acc.currentProgramId = "";
-          hasChanges = true;
-        }
       }
     }
   }
 
+  // 4. 日次トークンログ（dailyProgUsageData）の旧ID救出
   if (dailyProgUsageData && typeof dailyProgUsageData === "object") {
     let usageUpdated = false;
     Object.keys(dailyProgUsageData).forEach(dateKey => {
       const usageForDate = dailyProgUsageData[dateKey];
       if (usageForDate && typeof usageForDate === "object") {
         Object.keys(usageForDate).forEach(recordedProgId => {
-          if (!programsData.some(p => p.id === recordedProgId) && recordedProgId !== "prog_unassigned") {
-            const canonicalId = oldIdToCanonicalIdMap[recordedProgId] || "prog_10";
+          if (oldIdToCanonicalIdMap[recordedProgId]) {
+            const canonicalId = oldIdToCanonicalIdMap[recordedProgId];
             const tkValue = usageForDate[recordedProgId] || 0;
             usageForDate[canonicalId] = (usageForDate[canonicalId] || 0) + tkValue;
             delete usageForDate[recordedProgId];
@@ -1326,16 +1248,22 @@ function initNavigation() {
     renderMasterSettings();
   });
 
+  // 🛡️ 恒久対策：プログラムID(data-id)による厳格直接バインド保存（インデックスズレ・上書き破壊を完全根絶）
   document.getElementById("saveMasterBtn").addEventListener("click", () => {
     const rows = document.querySelectorAll("#masterTableBody tr");
-    rows.forEach((row, i) => {
+    rows.forEach((row) => {
       const nameInput = row.querySelector(".master-name");
       const repoInput = row.querySelector(".master-repo");
       const isWebInput = row.querySelector(".master-web-publish");
-      if (programsData[i]) {
-        programsData[i].name = nameInput.value.trim() || programsData[i].name;
-        programsData[i].githubRepo = repoInput.value.trim();
-        programsData[i].isWebPublish = isWebInput.checked;
+      const progId = nameInput ? nameInput.dataset.id : null;
+
+      if (progId) {
+        const targetProg = programsData.find(p => p.id === progId);
+        if (targetProg) {
+          targetProg.name = nameInput.value.trim() || targetProg.name;
+          targetProg.githubRepo = repoInput.value.trim();
+          targetProg.isWebPublish = isWebInput.checked;
+        }
       }
     });
 
