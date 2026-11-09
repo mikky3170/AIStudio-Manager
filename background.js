@@ -1,3 +1,5 @@
+// [v1.2.0 作業版 Rev.1] New Chat昇格時の初速トークン完全保護＆URL正規化による正確な差分加算
+
 chrome.action.onClicked.addListener(() => {
   chrome.tabs.create({ url: chrome.runtime.getURL("display.html") });
 });
@@ -94,7 +96,7 @@ function calculateDailyMeter(dailyTokens) {
   return 80;
 }
 
-// メッセージハンドラ（誤爆加算ゼロの堅牢差分検知 ＆ アカウント逆引き ＆ System Instruction自動配送エンジン）
+// メッセージハンドラ（誤爆加算ゼロの堅牢差分検知 ＆ アカウント逆引き ＆ トークン完全同期）
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 🔍 タブIDからアカウントIDを正確に逆引き（URLに /u/X がない場合のアカウント誤認を完全防止）
   if (message.type === "RESOLVE_ACCOUNT_ID") {
@@ -121,6 +123,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const { accountId, tokens, url } = message.data;
     if (accountId < 1 || accountId > 4) return;
 
+    // URLの厳格正規化（クエリパラメータや末尾スラッシュの差異による誤認識を物理遮断）
+    const cleanUrl = (url || "").split("?")[0].split("#")[0].replace(/\/+$/, "");
+
     chrome.storage.local.get(["accounts", "dailyProgUsage"], (res) => {
       const accounts = res.accounts || getDefaultAccounts();
       const dailyProgUsage = res.dailyProgUsage || {};
@@ -128,47 +133,50 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const todayKey = getTodayResetDateKey();
 
       acc.tabId = sender.tab ? sender.tab.id : acc.tabId;
-      acc.currentUrl = url || "";
+      acc.currentUrl = cleanUrl;
       acc.currentChatTokens = tokens || 0;
 
       if (!acc.urlBaselines) acc.urlBaselines = {};
 
-      if (tokens > 0 && url) {
-        // New Chatから固有URLへの昇格時のベースライン引き継ぎ
+      if (tokens > 0 && cleanUrl) {
+        // 🚀 New Chatから固有URLへの昇格検知（初速トークン切り捨て事故の完全防止）
         const isPromotedFromNewChat = (
           acc.lastChatUrl &&
           acc.lastChatUrl.includes("/prompts/new_chat") &&
-          !url.includes("/prompts/new_chat") &&
-          acc.urlBaselines[acc.lastChatUrl] !== undefined
+          !cleanUrl.includes("/prompts/new_chat")
         );
 
         if (isPromotedFromNewChat) {
-          acc.urlBaselines[url] = acc.urlBaselines[acc.lastChatUrl];
+          // 新規チャットから昇格した場合、ベースラインを0（または前回の端数）として引き継ぎ、全額を正確に加算
+          const previousBase = acc.urlBaselines[acc.lastChatUrl] || 0;
+          acc.urlBaselines[cleanUrl] = previousBase;
           delete acc.urlBaselines[acc.lastChatUrl];
         }
 
-        // 🛡️ 初めて検知されたURLの場合：ベースライン登録のみ（誤爆加算防止）
-        if (acc.urlBaselines[url] === undefined) {
-          acc.urlBaselines[url] = tokens;
+        // 🛡️ 初めて検知されたURLの場合の判定
+        if (acc.urlBaselines[cleanUrl] === undefined) {
+          // 過去ログを一覧から開いた場合：その時点のトークンをベースラインに登録（誤爆加算ゼロを完全死守）
+          acc.urlBaselines[cleanUrl] = tokens;
         } else {
-          const prevToken = acc.urlBaselines[url];
+          const prevToken = acc.urlBaselines[cleanUrl];
 
-          // 開いた後に増えた分だけを正確に加算
+          // 会話を進めて増えた分だけを漏れなく100%正確に累計加算
           if (tokens > prevToken) {
             const delta = tokens - prevToken;
             acc.tokens = (acc.tokens || 0) + delta;
-            acc.urlBaselines[url] = tokens;
+            acc.urlBaselines[cleanUrl] = tokens;
 
             if (!dailyProgUsage[todayKey]) dailyProgUsage[todayKey] = {};
             const targetProgId = acc.currentProgramId || "prog_unassigned";
             dailyProgUsage[todayKey][targetProgId] = (dailyProgUsage[todayKey][targetProgId] || 0) + delta;
 
           } else if (tokens < prevToken) {
-            acc.urlBaselines[url] = tokens;
+            // プロンプト編集や一部巻き戻しでトークンが減った場合のベースライン補正
+            acc.urlBaselines[cleanUrl] = tokens;
           }
         }
 
-        acc.lastChatUrl = url;
+        acc.lastChatUrl = cleanUrl;
 
         if (!acc.startTime && acc.tokens > 0) {
           acc.startTime = Date.now();
@@ -177,6 +185,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (acc.statusMode !== "limited" && acc.meterLevel !== 100) {
           acc.meterLevel = calculateDailyMeter(acc.tokens);
         }
+      } else if (cleanUrl) {
+        // トークンがまだ0の新規チャットの場合も、URL遷移元として確実に追跡
+        acc.lastChatUrl = cleanUrl;
       }
 
       accounts[accountId] = acc;
@@ -234,21 +245,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (currentProg.id !== "prog_unassigned") {
         const hasHistory = currentProg.saveHistory && currentProg.saveHistory.length > 0;
         if (hasHistory) {
-          autoBaseVersion = currentProg.version || "v1.0.0";
+          autoBaseVersion = currentProg.version || "v1.2.0";
         } else {
           autoBaseVersion = "🌱 初回構築中";
         }
       }
 
-      const cleanUrl = url.split("?")[0].replace(/\/+$/, "");
+      const cleanUrl = (url || "").split("?")[0].split("#")[0].replace(/\/+$/, "");
       const existingIndex = logs.findIndex(l => {
-        const logCleanUrl = (l.url || "").split("?")[0].replace(/\/+$/, "");
+        const logCleanUrl = (l.url || "").split("?")[0].split("#")[0].replace(/\/+$/, "");
         return logCleanUrl === cleanUrl;
       });
 
       const entry = {
         id: existingIndex >= 0 ? logs[existingIndex].id : `know_${Date.now()}`,
-        url: url,
+        url: cleanUrl,
         title: title || "無題のチャット",
         accountId: accountId,
         programId: currentProg.id,
