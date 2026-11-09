@@ -1,4 +1,4 @@
-// [v1.2.0 作業版 Rev.1] IDモニター・プログラム管理・ナレッジ要約・設定UI描画ロジックの独立分割
+// [v1.2.0 作業版 Rev.2] renderProgramDashboardからのデータ副作用完全撤去＆純粋描画化による画面遷移時データ破壊の根絶
 
 // === タブ1: IDモニター ＆ トークン管理 ===
 function setupCards() {
@@ -343,7 +343,7 @@ function updateCardValues() {
   }
 }
 
-// === タブ2: プログラム管理・エンハンス ===
+// === タブ2: プログラム管理・エンハンス (純粋描画化・データ副作用完全排除) ===
 function renderProgramDashboard() {
   const chartList = document.getElementById("chartList");
   const progCardList = document.getElementById("progCardList");
@@ -351,7 +351,7 @@ function renderProgramDashboard() {
   chartList.innerHTML = "";
   progCardList.innerHTML = "";
 
-  cleanupAndMigrateSaveHistory();
+  // 🛡️ 恒久対策：描画関数内でのマイグレーション（副作用）を完全撤廃。純粋な表示専用とする。
   updateAppVersionBadge();
 
   if (programsData.length === 0) {
