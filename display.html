@@ -1,3 +1,4 @@
+<!-- [v1.2.0 作業版 Rev.1] スクリプト3分割構成(app_core.js, app_ui.js, app_concierge.js)への移行およびバージョン1.2.0適用 -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -5,12 +6,38 @@
   <title>Studio マネージャー(AI Studio 連携)</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background-color: #0f172a; color: #f8fafc; padding: 20px 24px; min-width: 1000px; }
+    body { background-color: #0f172a; color: #f8fafc; padding: 0 24px 24px 24px; min-width: 1000px; }
     
-    header { display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 12px 20px; border-radius: 12px; margin-bottom: 18px; border: 1px solid #334155; }
+    /* 📌 ヘッダーの常時固定 (Sticky Header) */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #1e293b;
+      padding: 12px 20px;
+      border-radius: 0 0 12px 12px;
+      margin-bottom: 18px;
+      border: 1px solid #334155;
+      border-top: none;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+    }
     .header-left { display: flex; align-items: center; gap: 18px; }
-    .header-left h1 { font-size: 17px; font-weight: 700; color: #38bdf8; white-space: nowrap; letter-spacing: 0.5px; }
+    .header-left h1 { font-size: 17px; font-weight: 700; color: #38bdf8; white-space: nowrap; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
     
+    .app-version-badge {
+      background: #0c213b;
+      border: 1px solid #0284c7;
+      color: #38bdf8;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 4px;
+      letter-spacing: 0;
+    }
+
     .nav-tabs { display: flex; gap: 5px; background: #0f172a; padding: 4px; border-radius: 8px; border: 1px solid #334155; }
     .tab-btn { background: transparent; border: none; color: #94a3b8; padding: 6px 13px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; white-space: nowrap; }
     .tab-btn.active { background: #0284c7; color: white; }
@@ -19,19 +46,35 @@
     .nav-tabs-sub { background: #1e293b; border-color: #475569; }
     .nav-tabs-sub .tab-btn.active { background: #334155; color: #38bdf8; border: 1px solid #0284c7; }
     
-    .active-model-badge { font-size: 11.5px; font-weight: 700; color: #38bdf8; background: #0c213b; border: 1px solid #0284c7; padding: 6px 13px; border-radius: 20px; white-space: nowrap; }
-    .reset-timer { font-size: 12.5px; font-weight: 600; color: #fbbf24; background: #451a03; padding: 6px 14px; border-radius: 20px; border: 1px solid #b45309; white-space: nowrap; }
+    .reset-timer {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fbbf24;
+      background: #451a03;
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid #b45309;
+      white-space: nowrap;
+      width: 320px;
+      flex-shrink: 0;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif;
+    }
 
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
-    /* タブ1: IDモニター */
-    .grid-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-    @media (max-width: 1100px) { .grid-container { grid-template-columns: 1fr; } }
+    /* タブ1: IDモニター (包括的はみ出し防止) */
+    .grid-container { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    @media (max-width: 1100px) { .grid-container { grid-template-columns: minmax(0, 1fr); } }
     
-    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 11px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); transition: all 0.25s; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 11px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); transition: all 0.25s; min-width: 0; }
     .card.status-limited { border-color: #ef4444; box-shadow: 0 0 15px rgba(239, 68, 68, 0.35); }
-    .card.status-warning { border-color: #eab308; box-shadow: 0 0 15px rgba(234, 179, 8, 0.25); }
+    .card.status-warning { border-color: #facc15; box-shadow: 0 0 15px rgba(250, 204, 21, 0.35); }
 
     .card.status-limited .card-body-area {
       opacity: 0.42;
@@ -47,42 +90,69 @@
     .status-toggle-btn { font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 6px; cursor: pointer; transition: all 0.2s; user-select: none; border: 1px solid transparent; }
     .status-toggle-btn.mode-normal { background: #334155; color: #94a3b8; border-color: #475569; }
     .status-toggle-btn.mode-normal:hover { background: #475569; color: #f8fafc; }
-    .status-toggle-btn.mode-warning { background: #ca8a04; color: white; border-color: #facc15; box-shadow: 0 0 8px rgba(234, 179, 8, 0.4); }
+    .status-toggle-btn.mode-warning { background: #854d0e; color: #fef08a; border-color: #facc15; box-shadow: 0 0 8px rgba(250, 204, 21, 0.5); }
     .status-toggle-btn.mode-limited { background: #dc2626; color: white; border-color: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.5); }
 
-    .google-id-input { flex: 1; background: #0f172a; border: 1px solid #475569; color: #38bdf8; padding: 5px 9px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+    .google-id-input { flex: 1; min-width: 0; background: #0f172a; border: 1px solid #475569; color: #38bdf8; padding: 5px 9px; border-radius: 6px; font-size: 12px; font-weight: 600; }
     .jump-btn { background: #2563eb; border: none; color: white; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: 0.2s; white-space: nowrap; }
     .jump-btn:hover { background: #1d4ed8; }
 
     .card-body-area { display: flex; flex-direction: column; gap: 11px; transition: opacity 0.25s, filter 0.25s; }
     .field-label { font-size: 11px; color: #94a3b8; margin-bottom: 3px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
     
-    .two-rows-box { display: flex; flex-direction: column; gap: 8px; background: #0f172a; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; }
+    .two-rows-box { display: flex; flex-direction: column; gap: 8px; background: #0f172a; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; min-width: 0; }
     .row-1 { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-    .prog-wrapper { flex: 1; min-width: 0; }
-    .prog-select { width: 100%; background: #1e293b; padding: 6px 10px; border-radius: 6px; font-size: 12px; transition: 0.2s; text-overflow: ellipsis; }
+    .prog-wrapper { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+    .prog-select { flex: 1; min-width: 0; background: #1e293b; padding: 6px 10px; border-radius: 6px; font-size: 12px; transition: 0.2s; text-overflow: ellipsis; }
     .prog-select.unselected { border: 1px dashed #64748b; color: #64748b; }
     .prog-select.selected { border: 1px solid #0284c7; color: #38bdf8; font-weight: 600; background: #0c213b; }
 
-    .status-badge { display: flex; gap: 8px; background: #1e293b; padding: 6px 12px; border-radius: 6px; border: 1px solid #334155; font-size: 12px; color: #cbd5e1; white-space: nowrap; }
+    .id-prog-ver-badge {
+      font-size: 10.5px;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 5px;
+      white-space: nowrap;
+      background: #064e3b;
+      border: 1px solid #059669;
+      color: #a7f3d0;
+      display: none;
+    }
+    .id-prog-ver-badge.uncommitted {
+      background: #451a03;
+      border-color: #b45309;
+      color: #fde68a;
+    }
+
+    .status-badge { display: flex; gap: 6px; align-items: center; background: #1e293b; padding: 6px 10px; border-radius: 6px; border: 1px solid #334155; font-size: 11.5px; color: #cbd5e1; white-space: nowrap; }
+    
+    .btn-correct-tokens {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 11px;
+      padding: 0 2px;
+      transition: color 0.15s;
+    }
+    .btn-correct-tokens:hover { color: #38bdf8; }
 
     .row-2 { display: flex; align-items: center; gap: 8px; }
     .meter-label-mini { font-size: 10.5px; color: #64748b; font-weight: 600; white-space: nowrap; }
     .meter-segments { display: flex; gap: 5px; flex: 1; height: 24px; }
     
-    /* 20〜80%は自動表示（選択不可・通常カーソル）、100%のみ手動ポインタ */
     .segment { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; border-radius: 4px; border: 1px solid #475569; background: #334155; color: #94a3b8; transition: all 0.15s; user-select: none; cursor: default; }
     .segment.manual-seg { cursor: pointer; }
     .segment.manual-seg:hover { border-color: #ef4444; color: #f8fafc; }
 
     .segment.active-20 { background: #10b981; color: white; border-color: #059669; }
     .segment.active-40 { background: #84cc16; color: black; border-color: #65a30d; }
-    .segment.active-60 { background: #f59e0b; color: black; border-color: #d97706; }
+    .segment.active-60 { background: #facc15; color: black; border-color: #eab308; }
     .segment.active-80 { background: #f97316; color: white; border-color: #ea580c; }
     .segment.active-100 { background: #ef4444; color: white; border-color: #dc2626; box-shadow: 0 0 6px rgba(239, 68, 68, 0.6); }
 
     .chat-tokens-info { display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: #94a3b8; background: #1e293b; padding: 4px 10px; border-radius: 5px; border: 1px solid #334155; }
-    .bloat-badge { background: #ca8a04; color: white; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; border: 1px solid #facc15; animation: pulseWarning 1.5s infinite; }
+    .bloat-badge { background: #854d0e; color: #fef08a; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; border: 1px solid #facc15; animation: pulseWarning 1.5s infinite; }
 
     @keyframes pulseWarning {
       0% { opacity: 0.9; }
@@ -93,129 +163,679 @@
     .theme-input { width: 100%; background: #0f172a; border: 1px solid #475569; color: #f8fafc; padding: 6px 10px; border-radius: 6px; font-size: 12px; }
     .notes-area { width: 100%; height: 48px; background: #0f172a; border: 1px solid #475569; color: #f8fafc; padding: 6px 10px; border-radius: 6px; font-size: 12px; resize: none; }
 
-    /* タブ2: プログラム分析 */
-    .prog-dashboard { display: flex; flex-direction: column; gap: 16px; }
+    /* 📌 タブ2: プログラム管理・エンハンス (はみ出し完全遮断レイアウト) */
+    .prog-dashboard { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+    .prog-analytics-grid {
+      display: grid;
+      grid-template-columns: 500px minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 1200px) { .prog-analytics-grid { grid-template-columns: minmax(0, 1fr); } }
 
-    .prog-analytics-grid { display: grid; grid-template-columns: 1fr 1.15fr; gap: 16px; align-items: start; }
-    @media (max-width: 1150px) { .prog-analytics-grid { grid-template-columns: 1fr; } }
-
-    .chart-section { background: #1e293b; padding: 18px 20px; border-radius: 12px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 14px; }
-    .chart-header-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+    /* 📌 左側：常時固定・目次インデックスナビ（縦スクロール対応） */
+    .chart-section {
+      position: sticky;
+      top: 78px;
+      max-height: calc(100vh - 96px);
+      background: #1e293b;
+      padding: 18px 20px;
+      border-radius: 12px;
+      border: 1px solid #334155;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      min-width: 0;
+    }
+    .chart-header-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 10px; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
     .chart-title-text { font-size: 13.5px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 6px; }
     
-    .period-selector { display: flex; gap: 6px; }
-    .period-btn { background: #0f172a; border: 1px solid #475569; color: #cbd5e1; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; }
+    .period-selector { display: flex; gap: 5px; flex-wrap: wrap; }
+    .period-btn { background: #0f172a; border: 1px solid #475569; color: #cbd5e1; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: 600; transition: 0.15s; }
     .period-btn.active { background: #38bdf8; color: #0f172a; border-color: #38bdf8; font-weight: 700; }
 
-    .chart-list { display: flex; flex-direction: column; gap: 14px; }
-    .chart-row { display: flex; flex-direction: column; gap: 5px; }
-    .chart-meta { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; }
-    .chart-bar-bg { width: 100%; height: 12px; background: #0f172a; border-radius: 6px; overflow: hidden; border: 1px solid #334155; }
-    .chart-bar-fill { height: 100%; border-radius: 6px; transition: width 0.4s ease; }
+    .chart-period-desc {
+      background: #0f172a;
+      border: 1px solid #1e3a8a;
+      border-left: 3px solid #38bdf8;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: #93c5fd;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
 
-    .programs-manage-section { background: #1e293b; padding: 18px 20px; border-radius: 12px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 12px; }
-    .section-head-title { font-size: 13.5px; font-weight: 700; color: #f8fafc; border-bottom: 1px solid #334155; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+    .chart-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 4px;
+      overflow-y: auto;
+      padding-right: 4px;
+      max-height: calc(100vh - 240px);
+    }
+    .chart-list::-webkit-scrollbar { width: 6px; }
+    .chart-list::-webkit-scrollbar-track { background: #0f172a; border-radius: 3px; }
+    .chart-list::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    .chart-list::-webkit-scrollbar-thumb:hover { background: #0284c7; }
     
-    .prog-card-list { display: flex; flex-direction: column; gap: 11px; }
-    .prog-manage-card { background: #0f172a; border: 1px solid #334155; border-radius: 9px; padding: 13px 16px; display: flex; flex-direction: column; gap: 8px; transition: border-color 0.2s; }
+    .chart-row {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .chart-row:hover {
+      border-color: #38bdf8;
+      background: #172554;
+      transform: translateX(3px);
+    }
+    .chart-row:hover .chart-meta span:first-child { color: #38bdf8; }
+    .chart-meta { display: flex; justify-content: space-between; font-size: 11.5px; font-weight: 600; }
+    .chart-bar-bg { width: 100%; height: 9px; background: #1e293b; border-radius: 5px; overflow: hidden; border: 1px solid #334155; }
+    .chart-bar-fill { height: 100%; border-radius: 5px; transition: width 0.4s ease; }
+
+    /* 📌 右側：ワイドなプログラム一覧・ロードマップ (突き抜け完全ガード) */
+    .programs-manage-section {
+      background: #1e293b;
+      padding: 18px 20px;
+      border-radius: 12px;
+      border: 1px solid #334155;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .section-head-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #38bdf8;
+      border-bottom: 1px solid #334155;
+      padding-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    
+    .prog-card-list { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+    .prog-manage-card {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+      min-width: 0;
+      overflow: hidden;
+    }
     .prog-manage-card:hover { border-color: #0284c7; }
+
+    .prog-manage-card.jump-target-glow {
+      animation: cardTargetGlow 1.8s ease-out;
+      border-color: #facc15 !important;
+    }
+    @keyframes cardTargetGlow {
+      0% { box-shadow: 0 0 0 rgba(250, 204, 21, 0); }
+      20% { box-shadow: 0 0 25px rgba(250, 204, 21, 0.7); border-color: #facc15; }
+      70% { box-shadow: 0 0 15px rgba(250, 204, 21, 0.4); border-color: #facc15; }
+      100% { box-shadow: 0 0 0 rgba(250, 204, 21, 0); }
+    }
     
     .prog-card-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .prog-card-title { font-size: 13.5px; font-weight: 700; color: #38bdf8; }
-    .prog-work-badge { background: #0369a1; color: white; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .prog-card-title-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+    .prog-card-title { font-size: 14px; font-weight: 700; color: #38bdf8; }
+    .prog-version-badge { background: #065f46; border: 1px solid #10b981; color: #a7f3d0; font-size: 11.5px; font-weight: 800; padding: 2px 8px; border-radius: 5px; }
+    .prog-version-badge.uncommitted { background: #451a03; border-color: #f59e0b; color: #fbbf24; }
     
-    .prog-card-details { font-size: 11.5px; color: #94a3b8; display: flex; flex-direction: column; gap: 3px; }
-    .commit-text { color: #f8fafc; font-weight: 600; background: #1e293b; padding: 3px 8px; border-radius: 4px; border: 1px solid #334155; display: inline-block; }
+    .badge-publish-mode {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .badge-publish-mode.web { background: #0284c7; color: white; border: 1px solid #38bdf8; }
+    .badge-publish-mode.source { background: #1e293b; color: #94a3b8; border: 1px solid #475569; }
+
+    .prog-work-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; transition: all 0.2s; white-space: nowrap; }
+    .prog-work-badge.active { background: #0369a1; border: 1px solid #38bdf8; color: white; box-shadow: 0 0 8px rgba(56, 189, 248, 0.4); }
+    .prog-work-badge.idle { background: #1e293b; border: 1px solid #475569; color: #94a3b8; font-weight: normal; }
     
-    .prog-card-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px; border-top: 1px solid #1e293b; padding-top: 8px; }
-    .view-history-btn { background: #1e293b; border: 1px solid #38bdf8; color: #38bdf8; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 11.5px; font-weight: 600; transition: 0.15s; }
-    .view-history-btn:hover { background: #0c213b; }
-    .github-push-btn { background: #238636; border: 1px solid #2ea043; color: white; padding: 5px 14px; border-radius: 6px; cursor: pointer; font-size: 11.5px; font-weight: 700; transition: 0.2s; }
-    .github-push-btn:hover { background: #2ea043; }
+    .prog-header-actions { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+    .btn-quick-add { font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 6px; cursor: pointer; transition: 0.15s; border: 1px solid transparent; }
+    .btn-quick-add.minor { background: #1e3a8a; border-color: #38bdf8; color: #38bdf8; }
+    .btn-quick-add.minor:hover { background: #0284c7; color: white; }
+    .btn-quick-add.patch { background: #451a03; border-color: #f59e0b; color: #fbbf24; }
+    .btn-quick-add.patch:hover { background: #b45309; color: white; }
 
-    /* タブ4: 🧠 開発ナレッジ要約 */
-    .knowledge-layout { display: flex; flex-direction: column; gap: 16px; }
-    .knowledge-controls { display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 12px 18px; border-radius: 10px; border: 1px solid #334155; flex-wrap: wrap; gap: 10px; }
-    .prog-filter-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
-    .filter-btn { background: #0f172a; border: 1px solid #475569; color: #cbd5e1; padding: 5px 12px; border-radius: 6px; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: 0.15s; }
-    .filter-btn.active { background: #0284c7; color: white; border-color: #38bdf8; }
-    .search-input { background: #0f172a; border: 1px solid #475569; color: #f8fafc; padding: 6px 12px; border-radius: 6px; font-size: 12px; width: 220px; }
+    .prog-card-files {
+      font-size: 11.5px;
+      color: #94a3b8;
+      background: #1e293b;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      word-break: break-all;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
 
-    .knowledge-list { display: flex; flex-direction: column; gap: 14px; }
-    .knowledge-card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); transition: border-color 0.2s; }
+    /* 💡 気付き・備忘録 (Inbox) エリア */
+    .inbox-section {
+      background: #111d33;
+      border: 1px dashed #38bdf8;
+      border-radius: 8px;
+      overflow: hidden;
+      transition: all 0.2s;
+    }
+    .inbox-head-accordion {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      cursor: pointer;
+      user-select: none;
+      background: #0f1e36;
+      transition: background 0.15s;
+    }
+    .inbox-head-accordion:hover { background: #172a4d; }
+    .inbox-head-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #93c5fd;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .inbox-head-actions { display: flex; align-items: center; gap: 8px; }
+    
+    .inbox-body-collapsible {
+      display: none;
+      padding: 12px 14px;
+      border-top: 1px dashed #1e3a8a;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .inbox-section.open .inbox-body-collapsible { display: flex; }
+
+    .inbox-input-row { display: flex; gap: 8px; align-items: center; }
+    .inbox-input {
+      flex: 1;
+      min-width: 0;
+      background: #0f172a;
+      border: 1px solid #475569;
+      color: #f8fafc;
+      padding: 7px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .inbox-input:focus { border-color: #38bdf8; outline: none; }
+    .btn-inbox-add {
+      background: #0284c7;
+      border: none;
+      color: white;
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: 0.15s;
+    }
+    .btn-inbox-add:hover { background: #0369a1; }
+    
+    .btn-inbox-triage {
+      background: #064e3b;
+      border: 1px solid #10b981;
+      color: #a7f3d0;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-inbox-triage:hover { background: #047857; color: white; }
+
+    .inbox-notes-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    .inbox-note-item {
+      background: #0f172a;
+      border: 1px solid #1e3a8a;
+      border-left: 3px solid #38bdf8;
+      border-radius: 5px;
+      padding: 6px 10px;
+      font-size: 11.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .inbox-note-text { color: #e2e8f0; line-height: 1.4; flex: 1; word-break: break-all; }
+    .inbox-note-date { color: #64748b; font-size: 10px; white-space: nowrap; }
+    .btn-del-inbox-note { background: transparent; border: none; color: #ef4444; font-size: 13px; cursor: pointer; padding: 0 4px; }
+
+    .initial-setup-banner {
+      background: linear-gradient(135deg, #0c213b, #172554);
+      border: 1px solid #0284c7;
+      border-left: 4px solid #38bdf8;
+      border-radius: 8px;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .initial-setup-info { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 280px; }
+    .initial-setup-title { font-size: 13px; font-weight: 700; color: #38bdf8; }
+    .initial-setup-desc { font-size: 11.5px; color: #cbd5e1; line-height: 1.4; }
+    .initial-setup-btn {
+      background: #238636;
+      border: 1px solid #2ea043;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: 0.2s;
+    }
+    .initial-setup-btn:hover { background: #2ea043; }
+
+    .enhance-section { background: #172554; border: 1px solid #1e40af; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+    .enhance-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700; color: #93c5fd; flex-wrap: wrap; gap: 8px; }
+    .ai-priority-btn { background: #0c213b; border: 1px solid #38bdf8; color: #38bdf8; padding: 3px 9px; border-radius: 5px; font-size: 11px; font-weight: 700; cursor: pointer; transition: 0.15s; white-space: nowrap; }
+    .ai-priority-btn:hover { background: #0284c7; color: white; }
+
+    .enhance-list { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    
+    .enhance-item-wrapper {
+      background: #0f172a;
+      border: 1px solid #1e3a8a;
+      border-radius: 6px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+      min-width: 0;
+    }
+    .enhance-item-wrapper:hover { border-color: #38bdf8; }
+    .enhance-item-wrapper.open { border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.25); }
+
+    .enhance-item-row {
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+      min-width: 0;
+    }
+    
+    .enhance-item-info { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; overflow: hidden; }
+    .target-ver-tag { font-size: 11px; font-weight: 800; padding: 1px 7px; border-radius: 4px; white-space: nowrap; flex-shrink: 0; }
+    .target-ver-tag.minor { background: #0c213b; color: #38bdf8; border: 1px solid #0284c7; }
+    .target-ver-tag.patch { background: #451a03; color: #facc15; border: 1px solid #eab308; }
+    .enhance-item-title-text { font-size: 12px; font-weight: 600; color: #f8fafc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+    .enhance-badge-prompt { font-size: 10px; color: #34d399; background: #064e3b; padding: 1px 5px; border-radius: 3px; white-space: nowrap; flex-shrink: 0; }
+
+    .enhance-item-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
+    
+    .btn-plan-save-row {
+      background: #238636;
+      border: 1px solid #2ea043;
+      color: white;
+      padding: 4px 10px;
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .btn-plan-save-row:hover {
+      background: #2ea043;
+      box-shadow: 0 0 8px rgba(46, 160, 67, 0.5);
+    }
+
+    .toggle-expand-btn { background: #1e293b; border: 1px solid #475569; color: #cbd5e1; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: 0.15s; }
+    .toggle-expand-btn:hover { background: #334155; color: white; border-color: #38bdf8; }
+    .del-plan-btn { background: transparent; border: none; color: #ef4444; font-size: 13px; cursor: pointer; padding: 0 4px; }
+
+    .enhance-inline-panel {
+      display: none;
+      padding: 12px 14px;
+      background: #090d16;
+      border-top: 1px solid #1e3a8a;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .enhance-item-wrapper.open .enhance-inline-panel { display: flex; }
+
+    .inline-field-row { display: flex; gap: 10px; align-items: center; }
+    .inline-input { background: #1e293b; border: 1px solid #475569; color: #f8fafc; padding: 6px 10px; border-radius: 6px; font-size: 12px; }
+    .inline-textarea { width: 100%; height: 110px; background: #1e293b; border: 1px solid #475569; color: #f8fafc; padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.45; resize: vertical; }
+
+    .inline-actions-row { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; flex-wrap: wrap; gap: 8px; }
+    .inline-btn-group-right { display: flex; gap: 8px; }
+
+    /* 📜 リリース実績セクション */
+    .history-section { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .history-head { font-size: 12px; font-weight: 700; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .history-head-right { display: flex; align-items: center; gap: 8px; }
+    .history-accordion-toggle { background: transparent; border: none; color: #38bdf8; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+    .history-accordion-toggle:hover { text-decoration: underline; }
+
+    .latest-history-box { background: #0f172a; border: 1px solid #334155; border-left: 3px solid #10b981; border-radius: 6px; padding: 8px 12px; font-size: 11.5px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    
+    .latest-history-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .latest-history-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+    .latest-ver-badge { background: #065f46; color: #34d399; font-weight: 800; padding: 1px 6px; border-radius: 4px; font-size: 11px; white-space: nowrap; flex-shrink: 0; }
+    .latest-commit-title { color: #cbd5e1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+    .latest-history-date { color: #64748b; font-size: 11px; white-space: nowrap; margin-left: auto; }
+
+    .older-history-container { display: none; flex-direction: column; gap: 6px; margin-top: 4px; min-width: 0; }
+    .older-history-container.open { display: flex; }
+    .older-history-item { background: #0f172a; border: 1px dashed #475569; border-radius: 6px; padding: 8px 10px; font-size: 11px; color: #94a3b8; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .older-history-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .older-history-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+
+    .prog-card-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px; border-top: 1px solid #1e293b; padding-top: 8px; flex-wrap: wrap; }
+    .edit-history-btn { background: #1e293b; border: 1px solid #475569; color: #cbd5e1; padding: 4px 10px; border-radius: 5px; cursor: pointer; font-size: 11px; font-weight: 600; transition: 0.15s; }
+    .edit-history-btn:hover { background: #334155; color: white; }
+
+    .emergency-push-link {
+      color: #64748b;
+      font-size: 10.5px;
+      text-decoration: underline;
+      cursor: pointer;
+      background: transparent;
+      border: none;
+      padding: 0;
+      transition: color 0.15s;
+    }
+    .emergency-push-link:hover { color: #94a3b8; }
+
+    /* タブ4: 🧠 開発ナレッジ要約 (完全突き抜け防止) */
+    .knowledge-layout { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+    .knowledge-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #1e293b;
+      padding: 10px 16px;
+      border-radius: 12px;
+      border: 1px solid #334155;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .prog-filter-tabs {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      background: #0f172a;
+      padding: 4px 6px;
+      border-radius: 24px;
+      border: 1px solid #334155;
+    }
+    .filter-pill-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #94a3b8;
+      padding: 5px 12px;
+      border-radius: 18px;
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .filter-pill-btn:hover { color: #f8fafc; background: rgba(255, 255, 255, 0.05); }
+    .filter-pill-btn.active { background: #0284c7; color: white; border-color: #38bdf8; box-shadow: 0 2px 8px rgba(2, 132, 199, 0.4); }
+    .filter-count-badge { font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 10px; background: #1e293b; color: #cbd5e1; border: 1px solid #475569; }
+    .filter-pill-btn.active .filter-count-badge { background: #0c213b; color: #38bdf8; border-color: #38bdf8; }
+
+    .knowledge-controls-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .search-input { background: #0f172a; border: 1px solid #475569; color: #f8fafc; padding: 7px 14px; border-radius: 20px; font-size: 12px; width: 240px; outline: none; transition: border-color 0.2s; }
+    .search-input:focus { border-color: #38bdf8; }
+
+    .active-model-badge {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #38bdf8;
+      background: #0c213b;
+      border: 1px solid #0284c7;
+      padding: 6px 14px;
+      border-radius: 20px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .search-highlight { background: #facc15; color: #0f172a; font-weight: 800; padding: 1px 4px; border-radius: 3px; box-shadow: 0 0 4px rgba(250, 204, 21, 0.5); }
+    .knowledge-list { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    .knowledge-card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); transition: border-color 0.2s; min-width: 0; overflow: hidden; }
     .knowledge-card:hover { border-color: #0284c7; }
     
     .knowledge-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 8px; flex-wrap: wrap; gap: 8px; }
-    .knowledge-title-group { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+    .knowledge-title-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
     
-    .badge-latest-star { background: #065f46; color: #34d399; border: 1px solid #059669; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 5px; box-shadow: 0 0 8px rgba(52, 211, 153, 0.3); }
-    .phase-badge { background: #1e293b; color: #94a3b8; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid #475569; }
-    .badge-prog { background: #0c213b; border: 1px solid #0284c7; color: #38bdf8; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
-    .badge-id { background: #334155; color: #cbd5e1; font-size: 11px; font-weight: bold; padding: 2px 6px; border-radius: 4px; }
+    .badge-latest-star { background: #065f46; color: #34d399; border: 1px solid #059669; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 5px; box-shadow: 0 0 8px rgba(52, 211, 153, 0.3); white-space: nowrap; }
+    .phase-badge { background: #1e293b; color: #94a3b8; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid #475569; white-space: nowrap; }
+    .badge-prog { background: #0c213b; border: 1px solid #0284c7; color: #38bdf8; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
+    .badge-id { background: #334155; color: #cbd5e1; font-size: 11px; font-weight: bold; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
     
+    .badge-base-version {
+      background: #064e3b;
+      border: 1px solid #059669;
+      color: #a7f3d0;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .badge-base-version:hover { background: #047857; border-color: #34d399; color: white; }
+    .badge-base-version.uncommitted { background: #451a03; border-color: #b45309; color: #fde68a; }
+    .badge-base-version.unset { background: #1e293b; border-color: #475569; color: #94a3b8; }
+
     .knowledge-title { font-size: 14px; font-weight: 700; color: #f8fafc; letter-spacing: 0.3px; }
-    .knowledge-dates { font-size: 11.5px; color: #94a3b8; background: #0f172a; padding: 3px 8px; border-radius: 4px; border: 1px solid #334155; }
-    .badge-model { background: #1e1b4b; border: 1px solid #6366f1; color: #a5b4fc; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; }
+    .knowledge-dates { font-size: 11.5px; color: #94a3b8; background: #0f172a; padding: 3px 8px; border-radius: 4px; border: 1px solid #334155; white-space: nowrap; }
     
-    .knowledge-actions { display: flex; gap: 6px; align-items: center; }
+    .knowledge-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     .order-btn { background: #0f172a; border: 1px solid #475569; color: #cbd5e1; padding: 4px 8px; border-radius: 5px; font-size: 11px; font-weight: bold; cursor: pointer; transition: 0.15s; }
     .order-btn:hover { background: #334155; color: white; border-color: #38bdf8; }
-    .copy-prompt-btn { background: #1e293b; border: 1px solid #38bdf8; color: #38bdf8; padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+    .copy-prompt-btn { background: #1e293b; border: 1px solid #38bdf8; color: #38bdf8; padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: 0.2s; white-space: nowrap; }
     .copy-prompt-btn:hover { background: #0c213b; }
-    .jump-chat-btn { background: #0284c7; color: white; border: none; padding: 5px 12px; border-radius: 6px; font-size: 11.5px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; transition: 0.2s; }
+    .jump-chat-btn { background: #0284c7; color: white; border: none; padding: 5px 12px; border-radius: 6px; font-size: 11.5px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; transition: 0.2s; white-space: nowrap; }
     .jump-chat-btn:hover { background: #0369a1; }
-    .del-card-btn { background: transparent; border: 1px solid #ef4444; color: #ef4444; padding: 4px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; }
+    .del-card-btn { background: transparent; border: 1px solid #ef4444; color: #ef4444; padding: 4px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; white-space: nowrap; }
     .del-card-btn:hover { background: #ef4444; color: white; }
 
-    .knowledge-purpose-box { background: #0f172a; border: 1px solid #1e3a8a; border-left: 4px solid #38bdf8; padding: 10px 14px; border-radius: 6px; font-size: 12.5px; color: #e2e8f0; line-height: 1.5; }
-    .knowledge-split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    @media (max-width: 900px) { .knowledge-split-grid { grid-template-columns: 1fr; } }
+    .knowledge-purpose-box { background: #0f172a; border: 1px solid #1e3a8a; border-left: 4px solid #38bdf8; padding: 10px 14px; border-radius: 6px; font-size: 12.5px; color: #e2e8f0; line-height: 1.5; word-break: break-word; }
+    .knowledge-split-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    @media (max-width: 900px) { .knowledge-split-grid { grid-template-columns: minmax(0, 1fr); } }
     
-    .knowledge-section-box { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+    .knowledge-section-box { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
     .section-box-header { font-size: 12px; font-weight: 700; color: #38bdf8; border-bottom: 1px solid #1e293b; padding-bottom: 5px; display: flex; align-items: center; gap: 5px; }
     .section-box-content { font-size: 12px; line-height: 1.65; color: #cbd5e1; white-space: pre-wrap; word-break: break-word; }
 
-    /* タブ3: 設定 */
-    .master-section { background: #1e293b; padding: 22px; border-radius: 12px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 20px; }
-    .api-card { background: #0f172a; border: 1px solid #38bdf8; border-radius: 10px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
-    .api-card-title { font-size: 14px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
-    .api-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+    /* 📌 タブ3: 設定 (2列グリッドはみ出し防止) */
+    .master-section { background: #1e293b; padding: 22px; border-radius: 12px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+    
+    .sysinst-card {
+      background: #0f172a;
+      border: 1px solid #10b981;
+      border-radius: 12px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      min-width: 0;
+    }
+    .sysinst-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1e3a8a;
+      padding-bottom: 10px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .sysinst-card-title { font-size: 14px; font-weight: 700; color: #34d399; display: flex; align-items: center; gap: 8px; }
+    
+    .sysinst-split-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      align-items: stretch;
+    }
+    @media (max-width: 950px) { .sysinst-split-grid { grid-template-columns: minmax(0, 1fr); } }
+
+    .sysinst-col-box {
+      background: #172554;
+      border: 1px solid #1e40af;
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+    .sysinst-col-box.common {
+      background: #0c1a2e;
+      border-color: #0284c7;
+    }
+    .sysinst-col-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 700;
+      color: #93c5fd;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .sysinst-textarea-large {
+      width: 100%;
+      height: 200px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #f8fafc;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      line-height: 1.5;
+      resize: vertical;
+    }
+    .sysinst-textarea-large:focus { border-color: #38bdf8; outline: none; }
+    
+    .sysinst-prog-picker {
+      background: #0f172a;
+      border: 1px solid #38bdf8;
+      color: #38bdf8;
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 6px;
+      outline: none;
+      max-width: 200px;
+    }
+
+    .master-table-card {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+      overflow-x: auto;
+    }
+    .master-desc { font-size: 12px; color: #94a3b8; line-height: 1.6; }
+    .master-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .master-table th { text-align: left; padding: 10px 12px; background: #1e293b; color: #94a3b8; border-bottom: 1px solid #334155; }
+    .master-table td { padding: 8px 12px; border-bottom: 1px solid #334155; vertical-align: middle; }
+    .master-row-hoverable { cursor: pointer; transition: background 0.15s; }
+    .master-row-hoverable:hover { background: #1e293b; }
+    .master-row-hoverable.selected { background: #172554; border-left: 3px solid #38bdf8; }
+    .master-input { width: 100%; background: #1e293b; border: 1px solid #475569; color: #f8fafc; padding: 6px 9px; border-radius: 5px; font-size: 12px; }
+    
+    .api-card { background: #0f172a; border: 1px solid #475569; border-radius: 10px; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    .api-card-title { font-size: 13.5px; font-weight: 700; color: #cbd5e1; display: flex; align-items: center; gap: 8px; }
+    
+    .api-grid-2col {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 900px) { .api-grid-2col { grid-template-columns: minmax(0, 1fr); } }
+
+    .api-col-left { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    .api-col-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    
     .api-field { display: flex; flex-direction: column; gap: 5px; }
-    .api-label { font-size: 11px; font-weight: 700; color: #cbd5e1; }
+    .api-label { font-size: 11.5px; font-weight: 700; color: #cbd5e1; }
     .api-input { background: #1e293b; border: 1px solid #475569; color: #f8fafc; padding: 7px 10px; border-radius: 6px; font-size: 12px; }
 
-    .master-desc { font-size: 12px; color: #94a3b8; background: #0f172a; padding: 10px 14px; border-radius: 8px; border-left: 4px solid #38bdf8; }
-    .master-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .master-table th { text-align: left; padding: 9px 12px; background: #0f172a; color: #94a3b8; border-bottom: 1px solid #334155; }
-    .master-table td { padding: 9px 12px; border-bottom: 1px solid #334155; }
-    .master-input { width: 100%; background: #0f172a; border: 1px solid #475569; color: #f8fafc; padding: 7px 9px; border-radius: 6px; font-size: 12px; }
-    .delete-btn { background: #dc2626; border: none; color: white; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; }
-    .delete-btn:hover { background: #b91c1c; }
-    .master-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; }
-    .btn-primary { background: #0284c7; border: none; color: white; padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .master-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; flex-wrap: wrap; gap: 10px; }
+    .btn-primary { background: #0284c7; border: none; color: white; padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.15s; white-space: nowrap; }
     .btn-primary:hover { background: #0369a1; }
-    .btn-secondary { background: #334155; border: 1px solid #475569; color: #cbd5e1; padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .btn-secondary { background: #334155; border: 1px solid #475569; color: #cbd5e1; padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.15s; white-space: nowrap; }
     .btn-secondary:hover { background: #475569; }
-    .btn-danger-outline { background: transparent; border: 1px solid #ef4444; color: #ef4444; padding: 7px 12px; border-radius: 6px; font-size: 11px; cursor: pointer; }
-    .btn-danger-outline:hover { background: #ef4444; color: white; }
 
-    /* タブ5: ガイド（完全整合性・最新マニュアル） */
+    /* タブ5: ガイド */
     .guide-container { display: flex; flex-direction: column; gap: 20px; max-width: 1100px; margin: 0 auto; padding-bottom: 40px; }
-    .guide-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 22px 26px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 4px 8px rgba(0,0,0,0.25); }
+    .guide-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 22px 26px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 4px 8px rgba(0,0,0,0.25); transition: border-color 0.3s, box-shadow 0.3s; }
     .guide-card h2 { font-size: 16px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
     .guide-card h3 { font-size: 14px; font-weight: 700; color: #f8fafc; margin-top: 8px; }
     .guide-card p, .guide-card li { font-size: 13px; color: #cbd5e1; line-height: 1.7; }
     .guide-card ul, .guide-card ol { margin-left: 20px; display: flex; flex-direction: column; gap: 6px; }
-    .guide-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
-    .guide-table th { background: #0f172a; color: #94a3b8; text-align: left; padding: 10px 14px; border: 1px solid #334155; }
-    .guide-table td { padding: 10px 14px; border: 1px solid #334155; background: #1e293b; color: #e2e8f0; }
-    .guide-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-    .guide-badge.green { background: #059669; color: white; }
-    .guide-badge.yellow { background: #84cc16; color: black; }
-    .guide-badge.orange { background: #d97706; color: black; }
-    .guide-badge.deep-orange { background: #ea580c; color: white; }
-    .guide-badge.red { background: #dc2626; color: white; }
-    .guide-callout { background: #0c213b; border-left: 4px solid #38bdf8; padding: 12px 16px; border-radius: 6px; font-size: 12.5px; color: #93c5fd; line-height: 1.6; }
 
     /* モーダル各種 */
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.75); display: none; justify-content: center; align-items: center; z-index: 10000; }
@@ -234,26 +854,143 @@
     .status-banner.active { display: block; }
     .commit-input { background: #0f172a; border: 1px solid #475569; color: #f8fafc; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; width: 100%; }
     .summary-area { width: 100%; height: 140px; background: #0f172a; border: 1px solid #475569; color: #f8fafc; padding: 10px 12px; border-radius: 6px; font-size: 12px; line-height: 1.5; resize: vertical; }
-    .modal-footer { padding: 14px 20px; background: #0f172a; border-top: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+    .modal-footer { padding: 14px 20px; background: #0f172a; border-top: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
 
-    .history-timeline-list { display: flex; flex-direction: column; gap: 12px; }
-    .history-card-item { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
-    .history-item-top { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 6px; }
-    .history-badge-num { background: #0284c7; color: white; font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 4px; }
-    .history-item-date { font-size: 11.5px; color: #94a3b8; }
-    .history-commit-msg { font-size: 13px; font-weight: 700; color: #38bdf8; }
-    .history-summary-body { font-size: 12px; color: #cbd5e1; line-height: 1.6; white-space: pre-wrap; background: #1e293b; padding: 10px 12px; border-radius: 6px; border: 1px solid #334155; }
+    .ver-input-group { display: flex; gap: 6px; align-items: center; }
+    .btn-ver-quick { font-size: 11px; font-weight: 700; padding: 6px 10px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; white-space: nowrap; transition: 0.15s; }
+    .btn-ver-quick.patch { background: #451a03; border-color: #f59e0b; color: #fbbf24; }
+    .btn-ver-quick.patch:hover { background: #b45309; color: white; }
+    .btn-ver-quick.minor { background: #1e3a8a; border-color: #38bdf8; color: #38bdf8; }
+    .btn-ver-quick.minor:hover { background: #0284c7; color: white; }
+    .btn-ver-quick.major { background: #3b0764; border-color: #a855f7; color: #d8b4fe; }
+    .btn-ver-quick.major:hover { background: #6b21a8; color: white; }
+
+    .ai-advice-panel { background: #0f172a; border: 1px solid #10b981; border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 12px; font-size: 11.5px; line-height: 1.55; color: #e2e8f0; white-space: pre-wrap; }
+
+    /* 🛡️ 事前診断（プリフライト）モーダル */
+    .preflight-issue-card { background: #0f172a; border-radius: 8px; padding: 12px 14px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 6px; }
+    .preflight-issue-card.danger { border: 1px solid #ef4444; border-left: 5px solid #ef4444; background: #250b0b; }
+    .preflight-issue-card.warning { border: 1px solid #facc15; border-left: 5px solid #facc15; background: #261f06; }
+    .preflight-badge { font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 4px; white-space: nowrap; display: inline-block; }
+    .preflight-badge.danger { background: #dc2626; color: #ffffff; border: 1px solid #ef4444; }
+    .preflight-badge.warning { background: #854d0e; color: #fef08a; border: 1px solid #facc15; }
+
+    /* 🧠 AIアイデア交通整理・仕分けモーダル */
+    .triage-item-card { background: #0f172a; border-radius: 8px; padding: 12px 14px; border: 1px solid #1e3a8a; display: flex; flex-direction: column; gap: 8px; }
+    .triage-item-card.merge { border-left: 4px solid #38bdf8; background: #0c1a2e; }
+    .triage-item-card.create { border-left: 4px solid #10b981; background: #062319; }
+    .badge-triage { font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 4px; white-space: nowrap; display: inline-block; }
+    .badge-triage.merge { background: #0284c7; color: white; }
+    .badge-triage.create { background: #059669; color: white; }
+    .badge-cost { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: #1e293b; color: #cbd5e1; border: 1px solid #475569; }
+
+    /* 🚀 着手アカウント選択ポップアップモーダル */
+    .modal-overlay#dispatchModalOverlay .modal-card { width: 450px; }
+    .dispatch-pick-btn { padding: 12px; }
+
+    /* 📜 GitHubセーブ履歴編集・確認モーダル */
+    .modal-overlay#editHistoryModalOverlay .modal-card { width: 750px; }
+
+    /* 🛠️ トークン手動補正モーダル */
+    .modal-overlay#tokenCorrectModalOverlay .modal-card { width: 440px; }
+
+    /* 💬 AIコンシェルジュ UI */
+    .concierge-floating-btn {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: white;
+      border: 1px solid #38bdf8;
+      border-radius: 30px;
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(2, 132, 199, 0.45);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.25s;
+    }
+    .concierge-floating-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(2, 132, 199, 0.6); background: linear-gradient(135deg, #0369a1, #1d4ed8); }
+    
+    .concierge-panel {
+      position: fixed;
+      bottom: 84px;
+      right: 24px;
+      width: 660px;
+      max-width: 95vw;
+      height: 620px;
+      max-height: 84vh;
+      background: #1e293b;
+      border: 1px solid #38bdf8;
+      border-radius: 14px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7);
+      display: none;
+      flex-direction: column;
+      z-index: 9999;
+      overflow: hidden;
+      animation: slideUpFade 0.2s ease-out;
+    }
+    .concierge-panel.active { display: flex; }
+
+    @keyframes slideUpFade { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+
+    .concierge-header { background: #0f172a; padding: 12px 18px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; cursor: move; user-select: none; }
+    .concierge-title { font-size: 13.5px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 7px; pointer-events: none; }
+    .concierge-reset-btn { background: transparent; border: 1px solid #475569; color: #94a3b8; font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer; }
+    .concierge-reset-btn:hover { background: #334155; color: white; }
+    .concierge-close-btn { background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer; padding: 0 4px; }
+    .concierge-close-btn:hover { color: white; }
+
+    .concierge-chips-row { display: flex; gap: 8px; padding: 8px 14px; background: #172554; overflow-x: auto; border-bottom: 1px solid #1e3a8a; white-space: nowrap; }
+    .chip-btn { background: #0f172a; border: 1px solid #38bdf8; color: #93c5fd; font-size: 11.5px; padding: 4px 10px; border-radius: 14px; cursor: pointer; transition: 0.15s; }
+    .chip-btn:hover { background: #0284c7; color: white; }
+    .chip-btn.accent { background: #1e3a8a; border-color: #60a5fa; color: #ffffff; font-weight: 700; }
+
+    .concierge-messages { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #0f172a; }
+    
+    .chat-bubble { max-width: 90%; padding: 10px 14px; border-radius: 10px; font-size: 12.5px; line-height: 1.5; word-break: break-word; text-align: left; }
+    .chat-bubble.user { align-self: flex-end; background: #0284c7; color: white; border-bottom-right-radius: 2px; }
+    .chat-bubble.assistant { align-self: flex-start; background: #1e293b; color: #f1f5f9; border: 1px solid #334155; border-bottom-left-radius: 2px; display: flex; flex-direction: column; gap: 8px; }
+
+    .btn-bubble-more { align-self: flex-start; background: #0f172a; border: 1px solid #38bdf8; color: #93c5fd; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 6px; cursor: pointer; transition: all 0.15s; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; }
+    .btn-bubble-more:hover { background: #0284c7; color: white; }
+
+    .concierge-status-bar { font-size: 11.5px; color: #38bdf8; padding: 6px 14px; background: #0c213b; border-top: 1px solid #1e293b; display: none; align-items: center; justify-content: space-between; }
+    .concierge-status-bar.active { display: flex; }
+
+    .voice-wave-container { display: none; align-items: center; gap: 3px; height: 18px; }
+    .voice-wave-container.active { display: flex; }
+    .wave-bar { width: 3.5px; height: 4px; background: #ef4444; border-radius: 2px; transition: height 0.05s ease; box-shadow: 0 0 4px rgba(239, 68, 68, 0.6); }
+
+    .concierge-input-area { padding: 10px 14px; background: #1e293b; border-top: 1px solid #334155; display: flex; gap: 10px; align-items: flex-end; }
+    .concierge-input { flex: 1; height: 48px; background: #0f172a; border: 1px solid #475569; color: #f8fafc; padding: 7px 10px; border-radius: 8px; font-size: 12.5px; line-height: 1.4; resize: none; outline: none; }
+    .concierge-input:focus { border-color: #38bdf8; }
+
+    .mic-btn { background: #334155; border: 1px solid #475569; color: #cbd5e1; height: 48px; padding: 0 14px; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 700; transition: all 0.2s; display: flex; align-items: center; justify-content: center; white-space: nowrap; }
+    .mic-btn:hover { background: #475569; color: white; }
+    .mic-btn.recording { background: #dc2626; border-color: #ef4444; color: white; animation: micPulse 1.2s infinite; }
+    @keyframes micPulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+
+    .concierge-send-btn { background: #0284c7; border: none; color: white; height: 48px; padding: 0 18px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 700; transition: 0.15s; display: flex; align-items: center; justify-content: center; }
+    .concierge-send-btn:hover { background: #0369a1; }
   </style>
 </head>
 <body>
 
-  <!-- ヘッダー -->
+  <!-- 📌 常時固定ヘッダー -->
   <header>
     <div class="header-left">
-      <h1>Studio マネージャー</h1>
+      <h1>
+        <span>Studio マネージャー</span>
+        <span class="app-version-badge" id="appVersionBadge">v1.2.0</span>
+      </h1>
       <div class="nav-tabs">
         <button class="tab-btn active" data-tab="tab1">① IDモニター (残量・メーター)</button>
-        <button class="tab-btn" data-tab="tab2">② プログラム分析 (グラフ・GitHub)</button>
+        <button class="tab-btn" data-tab="tab2">② 📦 プログラム管理・エンハンス (計画・セーブ・分析)</button>
         <button class="tab-btn" data-tab="tab4">③ 🧠 開発ナレッジ要約</button>
       </div>
     </div>
@@ -262,7 +999,6 @@
         <button class="tab-btn" data-tab="tab5">📖 ガイド</button>
         <button class="tab-btn" data-tab="tab3">⚙️ 設定</button>
       </div>
-      <div class="active-model-badge" id="activeModelBadge">🤖 Model: gemini-3.5-flash-lite</div>
       <div class="reset-timer" id="resetCountdown">次回 17:00 リセットまで: 計算中...</div>
     </div>
   </header>
@@ -272,29 +1008,40 @@
     <div class="grid-container" id="cardsGrid"></div>
   </div>
 
-  <!-- タブ2: プログラム分析 -->
+  <!-- タブ2: プログラム管理・エンハンス -->
   <div class="tab-content" id="tab2">
     <div class="prog-dashboard">
       <div class="prog-analytics-grid">
+        
+        <!-- 📌 左側：常時固定・目次インデックスナビ（縦スクロール対応） -->
         <div class="chart-section">
           <div class="chart-header-row">
             <span class="chart-title-text" id="chartPeriodTitle">📊 プログラム別 リソース配分</span>
             <div class="period-selector">
-              <button class="period-btn" data-period="today">1日 (Today)</button>
-              <button class="period-btn active" data-period="week">1週間 (Week)</button>
-              <button class="period-btn" data-period="month">1ヶ月 (Month)</button>
+              <button class="period-btn active" data-period="today">本日</button>
+              <button class="period-btn" data-period="week">7日</button>
+              <button class="period-btn" data-period="month">30日</button>
+              <button class="period-btn" data-period="total">累計</button>
             </div>
           </div>
+          <div class="chart-period-desc" id="chartPeriodDesc">
+            <span>📅 集計期間: 読み込み中...</span>
+          </div>
+          <p style="font-size: 10.5px; color: #64748b; margin-top: -4px;">
+            💡 プログラム名をクリックすると、右側の該当カードへ即座にジャンプします。
+          </p>
           <div class="chart-list" id="chartList"></div>
         </div>
 
+        <!-- 📌 右側：ワイドなプログラム一覧・ロードマップ (突き抜け防止) -->
         <div class="programs-manage-section">
           <div class="section-head-title">
-            <span>📦 プログラム一覧 & GitHubセーブ管理</span>
-            <span style="font-size: 11.5px; color: #94a3b8; font-weight: normal;">最新コミット & 変更履歴</span>
+            <span>📦 プログラム一覧 & 🚀 ロードマップ（予定 ➜ 実績）</span>
+            <span style="font-size: 11.5px; color: #94a3b8; font-weight: normal;">アイデア計画化 ＆ 計画直結セーブ ＆ 自動Change Log</span>
           </div>
           <div class="prog-card-list" id="progCardList"></div>
         </div>
+
       </div>
     </div>
   </div>
@@ -302,55 +1049,96 @@
   <!-- タブ3: 設定 -->
   <div class="tab-content" id="tab3">
     <div class="master-section">
-      <div class="api-card">
-        <div class="api-card-title">🔑 GitHub & Gemini API 連携設定（自動作成・差分要約）</div>
-        <div class="api-grid">
-          <div class="api-field">
-            <label class="api-label">GitHub Personal Access Token (PAT)</label>
-            <input type="password" class="api-input" id="githubToken" placeholder="ghp_xxxxxxxxxxxx (repo権限)">
+      
+      <!-- 🥇 最上段：System Instruction 左右2分割エディタ -->
+      <div class="sysinst-card">
+        <div class="sysinst-card-header">
+          <div class="sysinst-card-title">
+            <span>🤖</span> AI Studio用 System Instruction（共通ルール ＆ プログラム個別要件エディタ）
           </div>
-          <div class="api-field">
-            <label class="api-label">対象リポジトリ名 (例: your-id/AIStudio-Manager)</label>
-            <input type="text" class="api-input" id="githubRepo" placeholder="未作成なら自動で新規作成されます">
-          </div>
-          <div class="api-field">
-            <label class="api-label">Gemini API Key</label>
-            <input type="password" class="api-input" id="geminiApiKey" placeholder="AI Studioで発行したAPIキー">
-          </div>
-          <div class="api-field">
-            <label class="api-label">Geminiモデル名 (初期指定)</label>
-            <input type="text" class="api-input" id="geminiModelName" value="gemini-3.5-flash-lite">
-          </div>
+          <span style="font-size: 11px; color: #94a3b8;">※ここで定義した内容を確認し、AI StudioのSystem Instructions欄へコピーしてご活用いただけます</span>
         </div>
-        <div style="display: flex; justify-content: flex-end;">
-          <button class="btn-primary" id="saveApiConfigBtn" style="padding: 6px 16px; font-size: 12px;">💾 API設定を保存</button>
+
+        <div class="sysinst-split-grid">
+          <div class="sysinst-col-box common">
+            <div class="sysinst-col-head">
+              <span>🏛️ 全プログラム共通ルール（基本デグレード防止）</span>
+              <button class="btn-primary" id="saveCommonSysInstBtn" style="padding: 3px 10px; font-size: 11px;">💾 共通ルール保存</button>
+            </div>
+            <textarea class="sysinst-textarea-large" id="commonSystemInstructionArea" placeholder="すべてのAI Studioチャットに注入される基本デグレード防止ルール..."></textarea>
+          </div>
+
+          <div class="sysinst-col-box">
+            <div class="sysinst-col-head">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span>📦 対象プログラム:</span>
+                <select class="sysinst-prog-picker" id="sysinstProgPicker"></select>
+              </div>
+              <button class="btn-primary" id="saveProgCustomInstBtn" style="background: #059669; border-color: #10b981; padding: 3px 10px; font-size: 11px;">💾 固有要件保存</button>
+            </div>
+            <textarea class="sysinst-textarea-large" id="progCustomInstructionArea" placeholder="選択中のプログラム固有の技術制約・設計ルール..."></textarea>
+          </div>
         </div>
       </div>
 
-      <div class="master-desc">
-        📌 <strong>プログラム定義のマスタ管理エリア</strong><br>
-        ここで正式なプログラム名と対象ファイル（目録）を一括設定します。
-      </div>
+      <!-- 🥈 中段：プログラムマスタ管理テーブル -->
+      <div class="master-table-card">
+        <div class="master-desc">
+          📌 <strong>プログラムマスタ管理 ＆ 個別要件プレビュー</strong><br>
+          表の行をクリックすると、上の右側エディタにそのプログラムの固有要件がスッと読み込まれます。
+        </div>
 
-      <table class="master-table">
-        <thead>
-          <tr>
-            <th style="width: 5%;">#</th>
-            <th style="width: 40%;">正式プログラム名</th>
-            <th style="width: 35%;">対象ファイル名 (目録メモ)</th>
-            <th style="width: 10%;">操作</th>
-          </tr>
-        </thead>
-        <tbody id="masterTableBody"></tbody>
-      </table>
+        <table class="master-table">
+          <thead>
+            <tr>
+              <th style="width: 5%;">#</th>
+              <th style="width: 32%;">正式プログラム名</th>
+              <th style="width: 35%;">対象GitHubリポジトリ</th>
+              <th style="width: 15%; text-align: center;">🌐 Web公開</th>
+              <th style="width: 13%; text-align: center;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="masterTableBody"></tbody>
+        </table>
 
-      <div class="master-actions">
-        <div style="display: flex; gap: 10px;">
+        <div class="master-actions">
           <button class="btn-secondary" id="addMasterRowBtn">+ 新しいプログラム枠を追加</button>
-          <button class="btn-danger-outline" id="clearSampleBtn">初期サンプルを全消去して空にする</button>
+          <button class="btn-primary" id="saveMasterBtn">💾 この内容でマスタを確定・保存する</button>
         </div>
-        <button class="btn-primary" id="saveMasterBtn">💾 この内容でマスタを確定・保存する</button>
       </div>
+
+      <!-- 🥉 最下段：APIキー設定カード -->
+      <div class="api-card">
+        <div class="api-card-title">🔑 共通アカウント設定（Gemini API & GitHub Token）</div>
+        
+        <div class="api-grid-2col">
+          <div class="api-col-left">
+            <div class="api-field">
+              <label class="api-label">🤖 Geminiモデル名 (推奨: gemini-3.5-flash-lite)</label>
+              <input type="text" class="api-input" id="geminiModelName" value="gemini-3.5-flash-lite">
+            </div>
+            <div class="api-field">
+              <label class="api-label">🔑 Gemini API Key (AI Studio発行)</label>
+              <input type="password" class="api-input" id="geminiApiKey" placeholder="AI Studioで発行したAPIキー">
+            </div>
+          </div>
+
+          <div class="api-col-right">
+            <div class="api-field">
+              <label class="api-label">🐙 GitHub Personal Access Token (PAT)</label>
+              <input type="password" class="api-input" id="githubToken" placeholder="ghp_xxxxxxxxxxxx (repo権限)" style="height: 38px;">
+            </div>
+            <p style="font-size: 11px; color: #94a3b8; line-height: 1.45; margin-top: 2px;">
+              ※GitHubへの直接セーブやREADME自動更新に使用します。Classic Token (repo権限) または Fine-grained Token を設定してください。
+            </p>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+          <button class="btn-primary" id="saveApiConfigBtn" style="padding: 7px 18px; font-size: 12px;">💾 共通API設定を保存</button>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -358,124 +1146,130 @@
   <div class="tab-content" id="tab4">
     <div class="knowledge-layout">
       <div class="knowledge-controls">
-        <div class="prog-filter-tabs" id="knowledgeFilterTabs">
-          <button class="filter-btn active" data-prog="ALL">すべてのプログラム</button>
+        <div class="prog-filter-tabs" id="knowledgeFilterTabs"></div>
+        <div class="knowledge-controls-right">
+          <input type="text" class="search-input" id="knowledgeSearchInput" placeholder="🔍 ノウハウ・キーワード検索...">
+          <div class="active-model-badge" id="activeModelBadge">🤖 Model: gemini-3.5-flash-lite</div>
         </div>
-        <input type="text" class="search-input" id="knowledgeSearchInput" placeholder="🔍 ノウハウ・キーワード検索...">
       </div>
-
       <div class="knowledge-list" id="knowledgeListContainer"></div>
     </div>
   </div>
 
-  <!-- タブ5: ガイド（完全整合性・最新マニュアル） -->
+  <!-- タブ5: ガイド -->
   <div class="tab-content" id="tab5">
     <div class="guide-container">
-      
       <div class="guide-card">
         <h2>💡 1. 目的とコンセプト</h2>
         <p><strong>なぜStudioマネージャーが必要なのか？</strong><br>
         Google AI Studioの無料枠には1アカウントごとの日次利用制限が存在します。4つのアカウント（ID 1〜4）を切り替えて開発する中で起きる「どのアカウントが残りどれくらいか分からない」「チャットが長くなってクラッシュする」「IDを切り替えると過去の決定事項を忘れて先祖返り（デグレード）する」という課題を根本解決するために作られました。</p>
-        
-        <div class="guide-callout">
-          🎯 <strong>コンセプト：『4つの脳（アカウント）を1つのダッシュボードで統括し、先祖返りゼロで高速開発を回す』</strong><br>
-          本日の実質累計トークン監視、手動3段階ステータス管理、Geminiによるセッション全体のナレッジ自動要約（最新決定版の維持）、そして自動差分要約＋GitHub直接プッシュ機能を1画面で統合管理します。
-        </div>
       </div>
 
-      <!-- 最重要セクション：30万〜40万トークンの危険性とスマート引越しサイクル -->
       <div class="guide-card" style="border-color: #f59e0b; background: #1c1917;">
         <h2 style="color: #fbbf24;">⚠️ 2. 【最重要】30万〜40万トークンの壁と「スマート引越しサイクル」</h2>
         <p><strong>Google AI Studioでは、1つのチャットを長く続けすぎてはいけません。</strong><br>
-        チャットが長大化すると、毎回の指示で過去の全ログをGoogleのサーバーに再送信して再推論するため、以下の致命的な問題が発生します：</p>
-        <ul>
-          <li>ブラウザのタブが大量のメモリを消費し、タイピングやスクロールが激重になる。</li>
-          <li>Googleの推論サーバー側でタイムアウトし、<strong>「An internal error has occurred」が多発して作業不能</strong>になる。</li>
-        </ul>
-
-        <h3 style="color: #fde68a;">🔔 気づき（警告インジケーター）の仕組み</h3>
-        <p>チャットが <strong>300,000 トークン（30万tk）</strong> を超えると、拡張機能が自動で危険を察知し、以下の気づきを与えます：</p>
-        <ul>
-          <li><strong>AI Studio作業画面:</strong> 画面右上の要約ボタンが、自動でオレンジ色の <strong>`[⚠️ 〇〇k tk (肥大化中: 要約推奨)]`</strong> に変化します。</li>
-          <li><strong>マネージャー画面:</strong> IDモニターのカード内にオレンジ色の <strong>`[⚠️ 肥大化中・要約推奨]`</strong> バッジが点灯します。</li>
-        </ul>
-
-        <div class="guide-callout" style="border-left-color: #f59e0b; background: #291d03; color: #fef08a;">
-          🚀 <strong>推奨される「スマート引越し」の3ステップ（黄金サイクル）：</strong><br>
-          1. オレンジ色の警告が出たら、AI Studio右上の <strong>「🧠 要約ボタン」をポチッと押す</strong>（チャット全体の決定事項が一番上に最新保存されます）。<br>
-          2. AI Studioで <strong>新しいチャット（New Chat）</strong> を開く。<br>
-          3. マネージャーの最新カードにある <strong>「📋 引継ぎプロンプトをコピー」</strong> を押し、新規チャットに貼り付けて作業再開！<br>
-          <strong>➜ メモリ激軽・エラーゼロの状態で、最新仕様を100%引き継いで開発を続行できます。</strong>
-        </div>
+        チャットが長大化すると、毎回の指示で過去の全ログをGoogleのサーバーに再送信して再推論するため、ブラウザの激重化や「An internal error has occurred」の多発につながります。</p>
       </div>
 
       <div class="guide-card">
         <h2>📊 3. IDモニターの2大指標とステータス運用</h2>
-        <p>実態に即した正確な状況把握のため、モニターは以下の2つの異なる指標を明確に分けて管理します。</p>
-
-        <table class="guide-table">
-          <thead>
-            <tr>
-              <th style="width: 25%;">指標名</th>
-              <th style="width: 35%;">意味と動作</th>
-              <th style="width: 40%;">活用ルール</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><strong style="color: #38bdf8;">📊 本日の累計消費</strong></td>
-              <td><strong>アカウント全体の寿命（日次消費）</strong><br>チャットを新しくしても消えず、今日そのIDで消費した全トークンを拡張機能が合算（17:00リセット）。</td>
-              <td>メーター（20%〜80%）はこの累計値で自動進行します。「今日このIDをどれくらい使い倒したか」の真の残量目安になります。</td>
-            </tr>
-            <tr>
-              <td><strong style="color: #f59e0b;">💬 現在のチャット長</strong></td>
-              <td><strong>現在のチャットの肥大化度（重さ）</strong><br>今開いているチャット自体のトークン長（新チャットを開くと0に戻る）。</td>
-              <td>30万tkを超えると「⚠️肥大化中」が点灯します。クラッシュを避けて新しいチャットへ引越すタイミングの合図です。</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <h3>メーター仕様と手動3段階ステータスバッジ</h3>
-        <p>メーターは20%〜80%が自動表示、100%は手動専用です：</p>
-        <ul>
-          <li><strong>20% 〜 80% (自動表示):</strong> 本日の累計トークン消費に応じて自動点灯します（手動選択は不可）。</li>
-          <li><strong>100% (手動専用):</strong> ユーザー判断による確定ボタンです。自動では絶対に点灯しません。クリックでいつでもオン/オフ可能です。</li>
-          <li><strong>⚠️ リミット未達 (通常):</strong> 通常作業中。トークン消費によりメーターが自動点灯します。</li>
-          <li><strong>⚡ エラー多発・警戒 (黄色):</strong> 一時的な通信エラーが出始めた際、バッジをクリックして警戒状態にします（次IDの準備）。</li>
-          <li><strong>⛔ リミット到達・停止 (赤色):</strong> 「Quota exceeded」等で完全に停止した際、クリックして確定します。作業エリアが半透明グレーアウトし、別のアカウントへ移行します（誤操作時もクリックでいつでも通常に戻せます）。</li>
-        </ul>
+        <p>メーターは20%〜80%が自動表示（手動変更不可）、100%は手動専用です。バッジクリックで通常・警戒・停止を自由に切り替えられます。作業中プログラムのベースバージョンも直感的に確認できます。</p>
       </div>
 
       <div class="guide-card">
-        <h2>🧠 4. 開発ナレッジ要約とデグレード防止（完全ガイド）</h2>
-        <p>チャット全体の決定事項を凝縮ストックし、<strong>別アカウントへの引越し時に過去のコードに先祖返りする事故を100%防ぐ</strong>ための仕組みです。</p>
-
-        <h3>① 最新が常に一番上（トップ）に来る安心設計</h3>
-        <ul>
-          <li>要約ボタンを押すと、カードは自動的に一覧の一番上に追加され、緑色の <strong>`[⭐ 最新決定版]`</strong> バッジが付きます。</li>
-          <li>次に作業する時は、迷わず一番上のカードの <strong>「📋 引継ぎプロンプトをコピー」</strong> を押せば、絶対に先祖返りしません。</li>
-        </ul>
-
-        <h3>② カード内 2カラム情報ボックス</h3>
-        <ul>
-          <li>画面の横幅をフル活用し、<strong>「🎯 セッションの目的（全幅）」＋「🛠️ 決定事項・改修（左50%）」「💡 得られたノウハウ（右50%）」</strong>のボックス構造で整理されます。</li>
-        </ul>
-
-        <h3>③ チャットの順番入れ替えと完全保持（▲▼ボタン）</h3>
-        <ul>
-          <li>過去のチャットを後から追加した場合でも、「▲ 上へ」「▼ 下へ」で自由に順序を整えられます。</li>
-          <li><strong>並べ替えた順序はブラウザやパソコンを再起動しても100%永久に保持されます。</strong></li>
-        </ul>
+        <h2>🧠 4. 開発ナレッジ要約とデグレード防止</h2>
+        <p>最新の要約カードが常に一番上（⭐ 最新決定版）に配置されます。カード上のベースバージョンバッジをクリックすることで、そのチャットがどのバージョンを元にした作業だったかを後から自在に選択・補正できます。検索窓にキーワードを入力すると、該当箇所が黄色くハイライトされます。</p>
       </div>
 
       <div class="guide-card">
         <h2>📦 5. プログラム分析とGitHubセーブ履歴</h2>
-        <ul>
-          <li><strong>左右2カラム画面:</strong> 左側でリソース配分グラフ（スパン切替がヘッダーに統合）、右側でプログラム一覧とGitHubセーブを管理します。</li>
-          <li><strong>📜 履歴モーダル:</strong> 各プログラムの「📜 履歴」ボタンを押すと、過去すべてのコミット名・セーブ日時・Geminiが作成した箇条書き変更概要がタイムラインでゆったり確認できます。</li>
-        </ul>
+        <p>各プログラムのエンハンス計画から「🚀 セーブ」を押してファイルをドロップすると、プログラム個別のリポジトリへ差分解析＋Gemini自動要約でREADMEを更新しながらプッシュされます。</p>
       </div>
+    </div>
+  </div>
 
+  <!-- 💡 計画をキーワードで即座ストックするミニモーダル -->
+  <div class="modal-overlay" id="quickPlanModalOverlay">
+    <div class="modal-card" style="width: 540px;">
+      <div class="modal-header">
+        <h2 id="quickPlanModalTitle">＋ アイデア・計画をストック</h2>
+        <button id="closeQuickPlanModalBtn" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; gap: 10px;">
+          <div class="modal-field" style="width: 140px;">
+            <label class="field-label">🏷️ 予定バージョン</label>
+            <input type="text" class="commit-input" id="quickPlanTargetVerInput" style="color: #38bdf8; font-weight: bold;">
+          </div>
+          <div class="modal-field" style="flex: 1;">
+            <label class="field-label">📌 やりたいこと・キーワード (1行)</label>
+            <input type="text" class="commit-input" id="quickPlanTitleInput" placeholder="例: 音声認識が途切れる不具合の解消">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="cancelQuickPlanModalBtn">キャンセル</button>
+        <button class="btn-primary" id="saveQuickPlanBtn">＋ キューに追加する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🤖 AI着手優先度診断モーダル -->
+  <div class="modal-overlay" id="priorityModalOverlay">
+    <div class="modal-card" style="width: 840px;">
+      <div class="modal-header">
+        <h2 id="priorityModalTitle">🤖 AI着手優先度チェック（どれから始めるべき？）</h2>
+        <button id="closePriorityModalBtn" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="priorityLoadingBanner" class="status-banner active">⏳ 現在の全計画とコードを照合し、最も手戻りの少ない着手順を推論中...</div>
+        <div id="priorityResultContent" class="ai-advice-panel active" style="min-height: 180px; font-size: 12.5px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" id="closePriorityResultBtn" style="margin-left: auto;">了解しました</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🧠 AIアイデア交通整理・仕分けモーダル -->
+  <div class="modal-overlay" id="triageModalOverlay">
+    <div class="modal-card" style="width: 720px;">
+      <div class="modal-header">
+        <h2 id="triageModalTitle">✨ AIアイデア交通整理（重複統合 ＆ 小分け・まとめ提案）</h2>
+        <button id="closeTriageModalBtn" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 18px 20px;">
+        <div id="triageLoadingBanner" class="status-banner active">⏳ 全コードおよび既存計画と照合し、重複統合と安全なパッケージ化を推論中...</div>
+        <div id="triageResultIntro" style="font-size: 12px; color: #cbd5e1; line-height: 1.5; display: none;">
+          以下の仕分け案が起草されました。採用したい項目にチェックを入れて確定してください。
+        </div>
+        <div id="triageSuggestionsContainer" style="display: flex; flex-direction: column; gap: 10px; max-height: 320px; overflow-y: auto;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="cancelTriageBtn">キャンセル</button>
+        <button class="btn-primary" id="applyTriageBtn" style="display: none; background: #059669; border-color: #10b981;">
+          ✅ 選択した仕分け内容を正式計画へ反映する
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🚀 着手アカウント選択ポップアップモーダル -->
+  <div class="modal-overlay" id="dispatchModalOverlay">
+    <div class="modal-card" style="width: 450px;">
+      <div class="modal-header">
+        <h2>▶ どのアカウント(ID)で開発に着手しますか？</h2>
+        <button id="closeDispatchModalBtn" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 18px 20px;">
+        <div id="dispatchPlanSummary" style="font-size: 12.5px; color: #38bdf8; margin-bottom: 12px; font-weight: bold; white-space: pre-wrap;"></div>
+        <div style="grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; display: grid;" id="dispatchIdBtnGroup">
+          <button class="btn-primary dispatch-pick-btn" data-account="1" style="padding: 12px;">ID 1 で着手</button>
+          <button class="btn-primary dispatch-pick-btn" data-account="2" style="padding: 12px;">ID 2 で着手</button>
+          <button class="btn-primary dispatch-pick-btn" data-account="3" style="padding: 12px;">ID 3 で着手</button>
+          <button class="btn-primary dispatch-pick-btn" data-account="4" style="padding: 12px;">ID 4 で着手</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -487,13 +1281,26 @@
         <button id="closeModalBtn" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
       </div>
       <div class="modal-body">
-        <div class="modal-field">
-          <label class="field-label">📦 プッシュ先リポジトリ名 (例: username/AIStudio-Manager)</label>
-          <input type="text" class="commit-input" id="modalRepoInput" placeholder="username/repo-name (未作成なら自動作成されます)">
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 12px;">
+          <div class="modal-field">
+            <label class="field-label">📦 プッシュ先リポジトリ名 (例: username/MyProject)</label>
+            <input type="text" class="commit-input" id="modalRepoInput" placeholder="username/repo-name">
+          </div>
+          <div class="modal-field">
+            <label class="field-label" id="modalVersionLabel">🏷️ リリースバージョン</label>
+            <div class="ver-input-group">
+              <input type="text" class="commit-input" id="modalReleaseVersionInput" placeholder="v1.0.0" style="color: #38bdf8; font-weight: bold; width: 85px;">
+              <div id="quickVerBtnGroup" style="display: flex; gap: 4px;">
+                <button type="button" class="btn-ver-quick patch" data-type="patch" title="バグ修正 (+0.0.1)">Patch</button>
+                <button type="button" class="btn-ver-quick minor" data-type="minor" title="機能追加 (+0.1.0)">Minor</button>
+                <button type="button" class="btn-ver-quick major" data-type="major" title="メジャー改修 (+1.0.0)">Major</button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div>
-          <label class="field-label">📁 ローカルで動作確認したファイルを選択 (複数選択可)</label>
+          <label class="field-label">📁 ローカルで動作確認したファイルを選択 (複数選択可・画像や音声もOK)</label>
           <div class="dropzone" id="dropzone">
             <p>📂 ここに完成したファイルをドラッグ＆ドロップ<br><span style="color: #38bdf8; text-decoration: underline;">またはクリックしてファイルを選択</span></p>
             <input type="file" id="fileSelector" class="file-input" multiple>
@@ -505,7 +1312,7 @@
 
         <div>
           <label class="field-label">📌 コミットメッセージ (1行要約)</label>
-          <input type="text" class="commit-input" id="commitMessageInput" placeholder="例: feat: Google AI Studio連携マネージャーの更新">
+          <input type="text" class="commit-input" id="commitMessageInput" placeholder="例: v1.2.0: AIコンシェルジュ機能の強化">
         </div>
 
         <div>
@@ -523,20 +1330,124 @@
     </div>
   </div>
 
-  <!-- 📜 GitHubセーブ履歴確認モーダル -->
-  <div class="modal-overlay" id="historyModalOverlay">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h2 id="historyModalTitle">📜 GitHubセーブ履歴</h2>
-        <button id="closeHistoryModalBtn" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
+  <!-- 🛡️ GitHub事前チェック（プリフライト診断結果）モーダル -->
+  <div class="modal-overlay" id="preflightModalOverlay">
+    <div class="modal-card" style="width: 680px;">
+      <div class="modal-header" style="background: #0f172a;">
+        <h2 id="preflightModalTitle" style="color: #facc15;">🛡️ GitHub登録前 事前チェック結果</h2>
+        <button id="closePreflightModalBtn" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
       </div>
-      <div class="modal-body" id="historyModalBody"></div>
+      <div class="modal-body" style="padding: 18px 20px;">
+        <div id="preflightModalIntro" style="font-size: 12.5px; color: #cbd5e1; line-height: 1.5; margin-bottom: 4px;">
+          GitHubへのプッシュ直前スキャンにより、以下の注意・警告事項が検知されました。<br>
+          <strong style="color: #fca5a5;">※ファイル名を変更する場合は、コード内の呼び出しパス（HTMLやJS側）も必ずセットで修正してください。</strong>
+        </div>
+        <div id="preflightIssuesContainer" style="display: flex; flex-direction: column; gap: 10px; max-height: 280px; overflow-y: auto;"></div>
+      </div>
       <div class="modal-footer">
-        <button class="btn-secondary" id="closeHistoryModalFooterBtn" style="margin-left: auto;">閉じる</button>
+        <button class="btn-secondary" id="cancelPreflightBtn">一旦キャンセルして修正する</button>
+        <button class="btn-primary" id="proceedPushBtn" style="background: #238636; border-color: #2ea043;">
+          ⚠️ リスクを理解した上でこのまま登録する
+        </button>
       </div>
     </div>
   </div>
 
-  <script src="action.js"></script>
+  <!-- 📜 GitHubセーブ履歴編集・確認モーダル -->
+  <div class="modal-overlay" id="editHistoryModalOverlay">
+    <div class="modal-card" style="width: 750px;">
+      <div class="modal-header">
+        <h2 id="editHistoryModalTitle">📜 GitHubセーブ履歴の確認・バージョン補正</h2>
+        <button id="closeEditHistoryModalBtn" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+      <div class="modal-body" id="editHistoryModalBody"></div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="cancelEditHistoryBtn">閉じる</button>
+        <button class="btn-primary" id="saveEditedHistoryBtn">💾 バージョン変更を保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🛠️ トークン手動補正モーダル -->
+  <div class="modal-overlay" id="tokenCorrectModalOverlay">
+    <div class="modal-card" style="width: 440px;">
+      <div class="modal-header">
+        <h2>🛠️ IDの累計トークン数を手動補正</h2>
+        <button id="closeTokenCorrectModalBtn" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 18px 20px;">
+        <p style="font-size: 12px; color: #cbd5e1; line-height: 1.5; margin-bottom: 8px;">
+          過去チャットの誤読などで累計数値が跳ね上がった場合に、正しい数値へ直接修正・リセットできます。
+        </p>
+        <div class="modal-field">
+          <label class="field-label" id="tokenCorrectTargetLabel">ID 1 の本日の実質累計トークン数</label>
+          <input type="number" class="commit-input" id="tokenCorrectInput" min="0" step="1000">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="tokenCorrectResetZeroBtn" style="color: #ef4444;">0 tkにリセット</button>
+        <div style="display: flex; gap: 8px; margin-left: auto;">
+          <button class="btn-secondary" id="cancelTokenCorrectBtn">キャンセル</button>
+          <button class="btn-primary" id="saveTokenCorrectBtn">💾 確定する</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 💬 専任AIコンシェルジュ -->
+  <button class="concierge-floating-btn" id="conciergeFloatingBtn">
+    <span>💬</span> AIコンシェルジュに相談
+  </button>
+
+  <div class="concierge-panel" id="conciergePanel">
+    <div class="concierge-header" id="conciergeDragHeader" title="マウスでドラッグして好きな場所へ移動できます">
+      <div class="concierge-title">
+        <span>🤖</span> Studioマネージャー専任コンシェルジュ
+      </div>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <button class="concierge-reset-btn" id="conciergeResetBtn" title="会話履歴をクリア">会話リセット</button>
+        <button class="concierge-close-btn" id="conciergeCloseBtn">✕</button>
+      </div>
+    </div>
+
+    <div class="concierge-chips-row">
+      <button class="chip-btn accent" data-query="先ほどの回答について、背景や手順を含めてもっと詳しく教えて">📖 もっと詳しく教えて</button>
+      <button class="chip-btn" data-query="IDモニターの100%はどう切り替える？">100%の切り替え方は？</button>
+      <button class="chip-btn" data-query="スマート引越しサイクルの手順を教えて">スマート引越し手順</button>
+      <button class="chip-btn" data-query="プログラム管理のエンハンス計画の使い方は？">エンハンス計画の使い方</button>
+    </div>
+
+    <div class="concierge-messages" id="conciergeMessages">
+      <div class="chat-bubble assistant">
+        <div>
+          こんにちは！Studioマネージャーの専任コンシェルジュです。<br>
+          本システムの全コードとマニュアルを把握しています。何でもお気軽にご相談ください。<br>
+          右下の <strong>🎙️ マイクボタン</strong> を押すと、話し終わるまでじっくりお話しいただけます！
+        </div>
+      </div>
+    </div>
+
+    <div class="concierge-status-bar" id="conciergeStatusBar">
+      <span id="conciergeStatusText">ただいまマニュアルを一生懸命調べておりますので、もうしばらくお待ちください。</span>
+      <div class="voice-wave-container" id="voiceWaveContainer">
+        <div class="wave-bar" id="wBar1"></div>
+        <div class="wave-bar" id="wBar2"></div>
+        <div class="wave-bar" id="wBar3"></div>
+        <div class="wave-bar" id="wBar4"></div>
+        <div class="wave-bar" id="wBar5"></div>
+      </div>
+    </div>
+
+    <div class="concierge-input-area">
+      <textarea class="concierge-input" id="conciergeInput" placeholder="質問を入力（Enterで送信）、またはマイクでお話しください..."></textarea>
+      <button class="mic-btn" id="conciergeMicBtn" title="音声入力 (クリックで開始 / もう一度クリックで確定・清書)">🎙️</button>
+      <button class="concierge-send-btn" id="conciergeSendBtn">送信</button>
+    </div>
+  </div>
+
+  <!-- 分割スクリプト順次読み込み（依存順） -->
+  <script src="app_core.js"></script>
+  <script src="app_ui.js"></script>
+  <script src="app_concierge.js"></script>
 </body>
 </html>
