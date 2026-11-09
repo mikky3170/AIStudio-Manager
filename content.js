@@ -1,11 +1,47 @@
+// [v1.1.0 作業版 Rev.1] System Instruction自動注入機構の完全撤回 ＆ 安定版ナレッジ要約・トークン監視への原状復帰
 // AI Studio 開発ナレッジ自動要約＆同期エンジン
-// （手繰り寄せ型巻き戻し ＆ 全会話走査 ＆ 30万tk肥大化警告インジケーター搭載）
+// （手繰り寄せ型巻き戻し ＆ 全会話走査 ＆ 30万tk肥大化警告 ＆ アカウント逆引き ＆ 拡張更新時自己停止ガード搭載）
 
-function extractAccountIndex() {
+let scanTimerId = null;
+let injectTimerId = null;
+let cachedAccountId = null;
+
+// 拡張機能のコンテキストが有効かチェックし、無効化されていたらタイマーを自己破棄する
+function isContextValid() {
+  if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id) {
+    if (scanTimerId) clearInterval(scanTimerId);
+    if (injectTimerId) clearInterval(injectTimerId);
+    return false;
+  }
+  return true;
+}
+
+// アカウント番号の多重判定（URLの /u/X 判定 ＋ バックグラウンド側のタブID逆引き）
+async function resolveCurrentAccountId() {
+  if (cachedAccountId) return cachedAccountId;
+
   const match = window.location.pathname.match(/\/u\/(\d+)/);
   if (match) {
-    return parseInt(match[1], 10) + 1; // /u/3 -> 4
+    cachedAccountId = parseInt(match[1], 10) + 1;
+    return cachedAccountId;
   }
+
+  // URLに /u/X がない場合、自身のtabIdからbackgroundへアカウント番号を逆引き照会
+  if (isContextValid()) {
+    try {
+      const response = await new Promise(resolve => {
+        chrome.runtime.sendMessage({ type: "RESOLVE_ACCOUNT_ID" }, res => {
+          resolve(res && res.accountId ? res.accountId : null);
+        });
+      });
+      if (response) {
+        cachedAccountId = response;
+        return cachedAccountId;
+      }
+    } catch (e) {}
+  }
+
+  cachedAccountId = 1;
   return 1;
 }
 
@@ -56,23 +92,28 @@ function parseTokenStringFromUI(text) {
 }
 
 // ステータス定期同期 ＆ 30万tk肥大化警告ボタンの動的更新
-function scanAndSend() {
-  const accountId = extractAccountIndex();
+async function scanAndSend() {
+  if (!isContextValid()) return;
+
+  const accountId = await resolveCurrentAccountId();
   const title = extractChatTitle();
   const tokens = extractTokens();
 
-  // 画面右上の要約ボタンの警告色チェック
   updateButtonWarningState(tokens);
 
-  chrome.runtime.sendMessage({
-    type: "UPDATE_STATUS",
-    data: {
-      accountId: accountId,
-      title: title,
-      tokens: tokens,
-      url: window.location.href
-    }
-  }).catch(() => {});
+  try {
+    chrome.runtime.sendMessage({
+      type: "UPDATE_STATUS",
+      data: {
+        accountId: accountId,
+        title: title,
+        tokens: tokens,
+        url: window.location.href
+      }
+    }).catch(() => {});
+  } catch (e) {
+    if (!isContextValid()) return;
+  }
 }
 
 // 30万トークンを超えたら要約ボタンをオレンジ色の警告状態にする
@@ -82,7 +123,7 @@ function updateButtonWarningState(tokens) {
 
   if (tokens >= 300000) {
     const kTokens = Math.round(tokens / 1000);
-    btn.innerText = `⚠️ ${kTokens}k tk 肥大化中 (要約＆新チャット推奨)`;
+    btn.innerText = `⚠️ ${kTokens}k tk (F5更新 ➜ 要約＆新チャット推奨)`;
     btn.style.background = "#d97706";
     btn.style.borderColor = "#f59e0b";
   } else {
@@ -93,7 +134,7 @@ function updateButtonWarningState(tokens) {
 }
 
 scanAndSend();
-setInterval(scanAndSend, 3000);
+scanTimerId = setInterval(scanAndSend, 3000);
 
 // === 【手繰り寄せ型巻き戻し ＆ 全履歴走査エンジン】 ===
 
@@ -198,7 +239,10 @@ async function requestGeminiApi(modelName, apiKey, promptText) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
   const body = {
     contents: [{ parts: [{ text: promptText }] }],
-    generationConfig: { temperature: 0.2 }
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 2500
+    }
   };
 
   const res = await fetch(url, {
@@ -259,10 +303,33 @@ ${chatContext}
   }
 }
 
+function validateSummaryCompleteness(text) {
+  if (!text || text.length < 150) return false;
+
+  const hasPurpose = text.includes("■ セッションの目的");
+  const hasDecision = text.includes("■ 主な決定事項");
+  const hasKnowhow = text.includes("■ 得られたノウハウ") || text.includes("■ 💡 得られたノウハウ");
+
+  if (!hasPurpose || !hasDecision || !hasKnowhow) return false;
+
+  const trimmed = text.trim();
+  if (trimmed.endsWith("、") || trimmed.endsWith(",")) return false;
+
+  const decisionPart = text.split(/■\s*主な決定事項[^\n]*/i)[1] || "";
+  if (decisionPart.trim().length < 20) return false;
+
+  return true;
+}
+
 async function executeKnowledgeSync(btn) {
+  if (!isContextValid()) {
+    alert("拡張機能が更新されました。最新の状態で利用するため、AI Studioのページを一度再読み込み（F5）してください。");
+    return;
+  }
+
   btn.disabled = true;
 
-  const accountId = extractAccountIndex();
+  const accountId = await resolveCurrentAccountId();
   const title = extractChatTitle();
 
   const fullText = await extractFullChatHistoryWithHand((msg) => {
@@ -277,6 +344,8 @@ async function executeKnowledgeSync(btn) {
   }
 
   chrome.storage.local.get(["apiConfig"], async (res) => {
+    if (!isContextValid()) return;
+
     const apiConfig = res.apiConfig || {};
 
     let summaryText = "";
@@ -288,6 +357,18 @@ async function executeKnowledgeSync(btn) {
         const aiResponse = await callGeminiForKnowledgeSummary(fullText, apiConfig);
         summaryText = aiResponse.text;
         usedModel = aiResponse.usedModel;
+
+        const isValid = validateSummaryCompleteness(summaryText);
+        if (!isValid) {
+          console.warn("不完全な要約を検知:", summaryText);
+          alert("⚠️ 【要約の途切れを検知しました】\n\n会話が長大化し、ブラウザのメモリ圧迫により要約が途中で途切れてしまった可能性があります。\n\nお手数ですが、一度キーボードの【F5】キーを押してページを再読み込みしてから、もう一度「要約ボタン」を押してください。");
+          
+          btn.disabled = false;
+          btn.innerText = "⚠️ F5更新後に再試行してください";
+          btn.style.background = "#d97706";
+          return;
+        }
+
       } catch (err) {
         console.error("Gemini API Error:", err);
         summaryText = `【自動要約エラー: ${err.message}】\n\n■ 会話スニペット:\n${fullText.substring(0, 400)}...`;
@@ -302,28 +383,33 @@ async function executeKnowledgeSync(btn) {
     const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
     const formattedDate = `${dateStr} ${timeStr}`;
 
-    chrome.runtime.sendMessage({
-      type: "SAVE_KNOWLEDGE_SUMMARY",
-      data: {
-        accountId: accountId,
-        title: title,
-        url: window.location.href,
-        summary: summaryText,
-        chatDate: formattedDate,
-        updatedAt: formattedDate,
-        usedModel: usedModel
-      }
-    }, () => {
-      btn.innerText = "✅ ナレッジ同期完了！";
-      setTimeout(() => {
-        btn.disabled = false;
-        scanAndSend(); // ボタン状態を最新トークン数に応じて復帰
-      }, 2500);
-    });
+    try {
+      chrome.runtime.sendMessage({
+        type: "SAVE_KNOWLEDGE_SUMMARY",
+        data: {
+          accountId: accountId,
+          title: title,
+          url: window.location.href,
+          summary: summaryText,
+          chatDate: formattedDate,
+          updatedAt: formattedDate,
+          usedModel: usedModel
+        }
+      }, () => {
+        btn.innerText = "✅ ナレッジ同期完了！";
+        setTimeout(() => {
+          btn.disabled = false;
+          scanAndSend();
+        }, 2500);
+      });
+    } catch (e) {
+      console.warn("ナレッジ送信時コンテキスト切断:", e);
+    }
   });
 }
 
 function injectKnowledgeButton() {
+  if (!isContextValid()) return;
   if (document.getElementById("studio-manager-knowledge-btn")) return;
 
   const btn = document.createElement("button");
@@ -358,4 +444,4 @@ function injectKnowledgeButton() {
 }
 
 setTimeout(injectKnowledgeButton, 1500);
-setInterval(injectKnowledgeButton, 3000);
+injectTimerId = setInterval(injectKnowledgeButton, 3000);
