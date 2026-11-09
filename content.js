@@ -1,4 +1,4 @@
-// [v1.1.0 作業版 Rev.1] System Instruction自動注入機構の完全撤回 ＆ 安定版ナレッジ要約・トークン監視への原状復帰
+// [v1.2.0 作業版 Rev.1] トークン抽出の単位(k/M)対応＆URL正規化による正確なトークン検知
 // AI Studio 開発ナレッジ自動要約＆同期エンジン
 // （手繰り寄せ型巻き戻し ＆ 全会話走査 ＆ 30万tk肥大化警告 ＆ アカウント逆引き ＆ 拡張更新時自己停止ガード搭載）
 
@@ -14,6 +14,11 @@ function isContextValid() {
     return false;
   }
   return true;
+}
+
+// URLを正規化（クエリパラメータやハッシュを除去し、同一チャットの別URL誤認を防止）
+function getNormalizedUrl() {
+  return window.location.href.split("?")[0].split("#")[0].replace(/\/+$/, "");
 }
 
 // アカウント番号の多重判定（URLの /u/X 判定 ＋ バックグラウンド側のタブID逆引き）
@@ -53,7 +58,7 @@ function extractChatTitle() {
   return document.title.replace(" - Google AI Studio", "").trim() || "作業中タスク";
 }
 
-// === トークン数抽出 ===
+// === トークン数抽出（通常表記 ＆ k/M短縮表記に完全対応） ===
 function extractTokens() {
   const uiSelectors = [
     'ms-token-count',
@@ -80,15 +85,41 @@ function extractTokens() {
 
 function parseTokenStringFromUI(text) {
   if (!text) return 0;
-  const slashMatch = text.match(/([\d,]+)\s*\/\s*[\d,]+/);
+
+  // 1. スラッシュ形式 (例: "320,123 / 1,048,576" や "320k / 1M")
+  const slashMatch = text.match(/([\d,.]+\s*[kmb]?)\s*\/\s*[\d,.]+/i);
   if (slashMatch) {
-    return parseInt(slashMatch[1].replace(/,/g, ''), 10) || 0;
+    return convertUnitStringToNumber(slashMatch[1]);
   }
-  const tokenMatch = text.match(/([\d,]+)\s*tokens?/i);
+
+  // 2. tokens形式 (例: "320,123 tokens" や "320.5k tokens")
+  const tokenMatch = text.match(/([\d,.]+\s*[kmb]?)\s*tokens?/i);
   if (tokenMatch) {
-    return parseInt(tokenMatch[1].replace(/,/g, ''), 10) || 0;
+    return convertUnitStringToNumber(tokenMatch[1]);
   }
+
   return 0;
+}
+
+function convertUnitStringToNumber(str) {
+  if (!str) return 0;
+  const clean = str.replace(/,/g, '').trim().toLowerCase();
+  
+  if (clean.endsWith('m')) {
+    const num = parseFloat(clean.replace('m', ''));
+    return isNaN(num) ? 0 : Math.round(num * 1000000);
+  }
+  if (clean.endsWith('k')) {
+    const num = parseFloat(clean.replace('k', ''));
+    return isNaN(num) ? 0 : Math.round(num * 1000);
+  }
+  if (clean.endsWith('b')) {
+    const num = parseFloat(clean.replace('b', ''));
+    return isNaN(num) ? 0 : Math.round(num * 1000000000);
+  }
+
+  const num = parseInt(clean, 10);
+  return isNaN(num) ? 0 : num;
 }
 
 // ステータス定期同期 ＆ 30万tk肥大化警告ボタンの動的更新
@@ -98,6 +129,7 @@ async function scanAndSend() {
   const accountId = await resolveCurrentAccountId();
   const title = extractChatTitle();
   const tokens = extractTokens();
+  const normalizedUrl = getNormalizedUrl();
 
   updateButtonWarningState(tokens);
 
@@ -108,7 +140,8 @@ async function scanAndSend() {
         accountId: accountId,
         title: title,
         tokens: tokens,
-        url: window.location.href
+        url: normalizedUrl,
+        rawUrl: window.location.href
       }
     }).catch(() => {});
   } catch (e) {
@@ -331,6 +364,7 @@ async function executeKnowledgeSync(btn) {
 
   const accountId = await resolveCurrentAccountId();
   const title = extractChatTitle();
+  const normalizedUrl = getNormalizedUrl();
 
   const fullText = await extractFullChatHistoryWithHand((msg) => {
     btn.innerText = `⏳ ${msg}`;
@@ -389,7 +423,7 @@ async function executeKnowledgeSync(btn) {
         data: {
           accountId: accountId,
           title: title,
-          url: window.location.href,
+          url: normalizedUrl,
           summary: summaryText,
           chatDate: formattedDate,
           updatedAt: formattedDate,
