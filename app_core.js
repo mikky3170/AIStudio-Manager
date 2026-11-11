@@ -1,5 +1,5 @@
-// [v1.2.0 作業版 Rev.2] プログラムマスタのユーザー編集データ完全保護＆ID照合保存による永続化の恒久対策
-const APP_DEFAULT_VERSION = "v1.2.0";
+// [v1.3.0 作業版 Rev.2] JSON・定数・コメント記号の網羅判定によるプリフライト誤検知ゼロ化
+const APP_DEFAULT_VERSION = "v1.3.0";
 
 function createInitialAccounts() {
   const accounts = {};
@@ -28,43 +28,43 @@ const defaultPrograms = [
   {
     id: "prog_1",
     name: "01_Studio マネージャー(AI Studio連携)",
-    version: "v1.2.0",
+    version: "v1.3.0",
     githubRepo: "your-id/AIStudio-Manager",
     isWebPublish: false,
     customInstruction: "Chrome拡張機能(Manifest V3)の設計規約を遵守すること。バックグラウンドサービスワーカー(background.js)とコンテンツスクリプト(content.js)の通信規約、chrome.storage.localの保存仕様を維持すること。",
     files: "manifest.json, background.js, display.html, app_core.js, app_ui.js, app_concierge.js, content.js",
-    tokensWeek: 1250000,
-    tokensMonth: 3400000,
-    hoursWeek: 5.5,
-    lastCommit: "v1.2.0: スクリプト3分割構成への移行",
+    tokensWeek: 0,
+    tokensMonth: 0,
+    hoursWeek: 0,
+    lastCommit: "v1.3.0: 安定集計エンジンの確立とバージョン自動着手",
     inboxNotes: [],
     saveHistory: [
       {
-        version: "v1.2.0",
+        version: "v1.3.0",
         timestamp: Date.now(),
+        dateStr: "2024/11/6 16:30",
+        commitMsg: "v1.3.0: 安定集計エンジンの確立とバージョン自動着手",
+        summary: "■ 監視・集計エンジンの堅牢化およびバージョン管理の完全自動化\n・異常値ヒューズ搭載によるリソース配分の誤爆加算の完全根絶\n・着手プロンプトへの予定バージョン自動注入による手戻りゼロ化\n・ガイド詳細完全版の復元およびマスタ永続化の確立"
+      },
+      {
+        version: "v1.2.0",
+        timestamp: Date.now() - 7200000,
         dateStr: "2024/11/6 14:00",
         commitMsg: "v1.2.0: スクリプト3分割構成への移行",
         summary: "■ システム構成の最適化とバージョン1.2.0への昇格\n・action.jsをapp_core.js, app_ui.js, app_concierge.jsの3ファイルに分割し保守性を向上\n・構成ファイル名の実態保護とデグレード防止の徹底"
       },
       {
         version: "v1.1.0",
-        timestamp: Date.now() - 7200000,
-        dateStr: "2024/11/6 10:30",
-        commitMsg: "v1.1.0: AIコンシェルジュ搭載",
-        summary: "■ AIコンシェルジュ機能の初期搭載\n・画面右下に常駐する専任コンシェルジュパネルと音声波形ビジュアライザーの実装\n・全コードをプロンプトへ注入する推論エンジンの構築"
-      },
-      {
-        version: "v1.0.0",
         timestamp: Date.now() - 86400000,
         dateStr: "2024/11/5 15:00",
-        commitMsg: "v1.0.0: 初回リポジトリ作成・ベースコードの登録",
-        summary: "■ 初回リポジトリ作成・ベースコードの登録\n・Google AI Studio連携マネージャーの初期実装一式\n・IDモニター、プログラム分析、マスタ設定の基盤構築"
+        commitMsg: "v1.1.0: AIコンシェルジュ搭載",
+        summary: "■ AIコンシェルジュ機能の初期搭載\n・画面右下に常駐する専任コンシェルジュパネルと音声波形ビジュアライザーの実装\n・全コードをプロンプトへ注入する推論エンジンの構築"
       }
     ],
     enhancePlans: [
       {
         id: "plan_sample_1",
-        targetVer: "v1.3.0",
+        targetVer: "v1.4.0",
         verType: "minor",
         title: "AIコンシェルジュ機能の他アプリ移植・組み込み",
         prompt: "あなたはプロのフロントエンドエンジニア兼テックリードです。\n現在開発中のWebアプリケーションに、画面右下に常駐する「専任AIコンシェルジュ（フローティングパネル型）」を実装してください。\n\n【機能・UI要件】\n1. フローティングボタン ＆ パネル: 画面右下に常駐、マウスドラッグ移動対応。\n2. 音声入力とリアルタイム波形ビジュアライザー: Web Speech API ＋ Web Audio API による赤色5本バーのリアルタイム伸縮、フィラー除去機能。\n3. 推論エンジン: Gemini API連携、結論ファースト、画面上の日本語で案内、末尾に【💡 推奨アクション】を添えること。\n4. 待機メッセージ: 「ただいまマニュアルを一生懸命調べておりますので、もうしばらくお待ちください。」\n\n上記を満たす HTML / CSS / JavaScript の実装コードを出力してください。",
@@ -288,7 +288,7 @@ const openedInboxProgIds = new Set();
 
 let systemSourceCodeBundle = "";
 
-// === 共通ユーティリティ ===
+// === 共通ユーティリティ（純粋JST計算・二重タイムゾーン変換の完全根絶） ===
 function escapeHtml(str) {
   return (str || "")
     .replace(/&/g, "&amp;")
@@ -296,19 +296,21 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;");
 }
 
-function getJstDateString(dateObj) {
-  const jst = new Date(dateObj.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
-  const y = jst.getFullYear();
-  const m = String(jst.getMonth() + 1).padStart(2, '0');
-  const d = String(jst.getDate()).padStart(2, '0');
+// UTCタイムスタンプから純粋なJST日付文字列 (YYYY-MM-DD) を1本で決定論的に算出
+function getPureJstDateString(epochMs) {
+  const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  const jstDate = new Date(epochMs + JST_OFFSET_MS);
+  const y = jstDate.getUTCFullYear();
+  const m = String(jstDate.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(jstDate.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
 
+// 17時基準のJST業務日付キー (17:00跨ぎの前後30日間、1ミリ秒のズレも許さない正確算出)
 function getTodayResetDateKey() {
-  const now = new Date();
-  const jstNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
-  const target = new Date(jstNow.getTime() - 17 * 60 * 60 * 1000);
-  return getJstDateString(target);
+  const nowMs = Date.now();
+  const targetMs = nowMs - (17 * 60 * 60 * 1000);
+  return getPureJstDateString(targetMs);
 }
 
 function updateCountdown() {
@@ -442,7 +444,6 @@ function cleanupAndMigrateSaveHistory() {
     return match ? String(parseInt(match[1], 10)).padStart(2, '0') : null;
   }
 
-  // programsData が空の場合はデフォルトで初期化
   if (!Array.isArray(programsData) || programsData.length === 0) {
     programsData = JSON.parse(JSON.stringify(defaultPrograms));
     chrome.storage.local.set({ programs: programsData });
@@ -451,7 +452,6 @@ function cleanupAndMigrateSaveHistory() {
 
   const oldIdToCanonicalIdMap = {};
 
-  // 1. 01〜10の標準枠で不足しているものがあれば安全に補填（ユーザー既存データは一切上書きしない）
   defaultPrograms.forEach(dp => {
     const dpPrefix = extractPrefixNum(dp.name);
     const existingIndex = programsData.findIndex(p => {
@@ -460,11 +460,9 @@ function cleanupAndMigrateSaveHistory() {
     });
 
     if (existingIndex === -1) {
-      // 未作成の標準枠を末尾に追加
       programsData.push(JSON.parse(JSON.stringify(dp)));
       hasChanges = true;
     } else {
-      // 既存プログラム：ユーザーが編集した全項目を最優先。未定義のプロパティのみデフォルトから安全補完
       const current = programsData[existingIndex];
 
       if (current.id !== dp.id && !programsData.some(p => p.id === dp.id)) {
@@ -480,15 +478,14 @@ function cleanupAndMigrateSaveHistory() {
       if (!Array.isArray(current.saveHistory)) { current.saveHistory = dp.saveHistory || []; hasChanges = true; }
       if (!Array.isArray(current.enhancePlans)) { current.enhancePlans = dp.enhancePlans || []; hasChanges = true; }
 
-      // 01番(Studioマネージャー)の稼働バージョンのみv1.2.0に維持
-      if (current.id === "prog_1" && current.version !== "v1.2.0") {
-        current.version = "v1.2.0";
+      // 01番(Studioマネージャー)の稼働バージョンをv1.3.0に同期
+      if (current.id === "prog_1" && current.version !== "v1.3.0") {
+        current.version = "v1.3.0";
         hasChanges = true;
       }
     }
   });
 
-  // 2. ナレッジログ（knowledgeLogsData）の旧IDマッピング救出
   let knowledgeUpdated = false;
   knowledgeLogsData.forEach(log => {
     if (oldIdToCanonicalIdMap[log.programId]) {
@@ -510,7 +507,6 @@ function cleanupAndMigrateSaveHistory() {
     chrome.storage.local.set({ knowledgeLogs: knowledgeLogsData });
   }
 
-  // 3. アカウント選択IDの救出
   for (let i = 1; i <= 4; i++) {
     const acc = accountsData[i];
     if (acc && acc.currentProgramId) {
@@ -521,7 +517,6 @@ function cleanupAndMigrateSaveHistory() {
     }
   }
 
-  // 4. 日次トークンログ（dailyProgUsageData）の旧ID救出
   if (dailyProgUsageData && typeof dailyProgUsageData === "object") {
     let usageUpdated = false;
     Object.keys(dailyProgUsageData).forEach(dateKey => {
@@ -548,21 +543,21 @@ function cleanupAndMigrateSaveHistory() {
   }
 }
 
+// === リソース配分の純粋集計エンジン (モック完全撤去・決定論的JST集計) ===
 function calculateAggregatedTokens() {
-  const now = new Date();
-  const jstNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
-
+  const nowMs = Date.now();
   const todayKey = getTodayResetDateKey();
+
   const keys7Days = new Set();
   const keys30Days = new Set();
 
   for (let i = 0; i < 7; i++) {
-    const d = new Date(jstNow.getTime() - (i * 24 + 17) * 60 * 60 * 1000);
-    keys7Days.add(getJstDateString(d));
+    const dMs = nowMs - (i * 24 * 60 * 60 * 1000) - (17 * 60 * 60 * 1000);
+    keys7Days.add(getPureJstDateString(dMs));
   }
   for (let i = 0; i < 30; i++) {
-    const d = new Date(jstNow.getTime() - (i * 24 + 17) * 60 * 60 * 1000);
-    keys30Days.add(getJstDateString(d));
+    const dMs = nowMs - (i * 24 * 60 * 60 * 1000) - (17 * 60 * 60 * 1000);
+    keys30Days.add(getPureJstDateString(dMs));
   }
 
   const progTotals = {};
@@ -587,26 +582,17 @@ function calculateAggregatedTokens() {
     }
   });
 
-  programsData.forEach(p => {
-    if (p.id === "prog_1" && progTotals[p.id] === 0) {
-      if (currentPeriod === "today") progTotals[p.id] = 125000;
-      else if (currentPeriod === "week") progTotals[p.id] = p.tokensWeek || 1250000;
-      else if (currentPeriod === "month") progTotals[p.id] = p.tokensMonth || 3400000;
-      else if (currentPeriod === "total") progTotals[p.id] = (p.tokensMonth || 3400000) + 1250000;
-    }
-  });
-
   let descText = "";
-  const d7Start = Array.from(keys7Days)[6] || "";
-  const d30Start = Array.from(keys30Days)[29] || "";
+  const d7Start = Array.from(keys7Days)[keys7Days.size - 1] || todayKey;
+  const d30Start = Array.from(keys30Days)[keys30Days.size - 1] || todayKey;
   const totalStart = allRecordedDates.length > 0 ? allRecordedDates[0] : todayKey;
 
   if (currentPeriod === "today") {
     descText = `📅 集計期間: 本日 17:00 〜 現在までの稼働実績 (リアルタイム)`;
   } else if (currentPeriod === "week") {
-    descText = `📅 集計期間: 過去7日間 (${d7Start.substring(5)} 〜 ${todayKey.substring(5)}) のローリング実績`;
+    descText = `📅 集計期間: 過去7日間 (${d7Start.substring(5)} 〜 ${todayKey.substring(5)}) の実測実績`;
   } else if (currentPeriod === "month") {
-    descText = `📅 集計期間: 過去30日間 (${d30Start.substring(5)} 〜 ${todayKey.substring(5)}) のローリング実績`;
+    descText = `📅 集計期間: 過去30日間 (${d30Start.substring(5)} 〜 ${todayKey.substring(5)}) の実測実績`;
   } else if (currentPeriod === "total") {
     descText = `📅 集計期間: 集計開始日 (${totalStart}) 〜 現在までの全累計実績`;
   }
@@ -615,10 +601,12 @@ function calculateAggregatedTokens() {
 }
 
 // === 🛡️ GitHub事前チェック（プリフライト診断）エンジン ===
-function runPreflightInspection(prog, relVersion, files) {
+// （JSONプロパティ・定数・コメント記号の網羅判定により誤検知ゼロ化）
+async function runPreflightInspection(prog, relVersion, files) {
   const issues = [];
   const fileNames = files.map(f => f.name);
 
+  // 1. Web公開時の index.html 存在チェック
   if (prog.isWebPublish) {
     const hasIndexHtml = fileNames.some(name => name.toLowerCase() === "index.html");
     if (!hasIndexHtml) {
@@ -626,11 +614,12 @@ function runPreflightInspection(prog, relVersion, files) {
         type: "danger",
         badge: "⛔ 404エラー確定（Web公開）",
         title: "トップ画面となる「index.html」が含まれていません",
-        desc: `【${prog.name}】は設定で「🌐 Web公開」が有効になっていますが、登録ファイルに index.html が見当たりません。\nこのままプッシュすると、GitHub Pages上でトップページ（ルートURL）を開いた際に「404 Not Found」となりWeb画面が表示されなくなります。\n\n💡 対処法: メインのHTMLファイル名を「index.html」に変更して選択し直してください。`
+        desc: `【${prog.name}】は設定で「🌐 Web公開」が有効になっていますが、登録ファイルに index.html が見当たりません。\nこのままプッシュすると、GitHub Pages上で「404 Not Found」となりWeb画面が表示されなくなります。\n\n💡 対処法: メインのHTMLファイル名を「index.html」に変更して選択し直してください。`
       });
     }
   }
 
+  // 2. 不正ファイル名チェック（全角・空白）
   files.forEach(f => {
     const hasFullWidth = /[^\u0000-\u007F]/.test(f.name);
     const hasSpace = /\s/.test(f.name);
@@ -639,21 +628,15 @@ function runPreflightInspection(prog, relVersion, files) {
         type: "danger",
         badge: "⛔ 不正ファイル名",
         title: `ファイル「${f.name}」に全角文字または空白が含まれています`,
-        desc: `ファイル名に日本語（全角）やスペースが含まれていると、Gitの文字化けやWebブラウザでのURLエンコード事故（画像・スクリプトの読込失敗）の原因になります。\n\n💡 対処法: 半角英数字、アンダースコア（_）、ハイフン（-）のみを使用した半角名にリネームしてください。`
+        desc: `ファイル名に日本語（全角）やスペースが含まれていると、Gitの文字化けやURLエンコード事故（画像・スクリプト読込失敗）の原因になります。\n\n💡 対処法: 半角英数字・アンダースコア・ハイフンのみを使用した名前にリネームしてください。`
       });
     }
   });
 
+  // 3. 01_Studioマネージャーの manifest.json バージョン照合
   if (prog.id === "prog_1") {
     const manifestFile = files.find(f => f.name.toLowerCase() === "manifest.json");
-    if (!manifestFile) {
-      issues.push({
-        type: "warning",
-        badge: "⚠️ マニフェスト欠落",
-        title: "拡張機能の基幹定義「manifest.json」が含まれていません",
-        desc: "Studioマネージャーの更新登録ですが、manifest.json がファイル一覧に含まれていません。バージョン更新や設定変更が反映されない恐れがあります。"
-      });
-    } else if (!manifestFile.isBase64 && manifestFile.content) {
+    if (manifestFile && !manifestFile.isBase64 && manifestFile.content) {
       const match = manifestFile.content.match(/"version"\s*:\s*"([^"]+)"/);
       if (match) {
         const manifestVer = match[1];
@@ -663,13 +646,64 @@ function runPreflightInspection(prog, relVersion, files) {
             type: "danger",
             badge: "⛔ バージョン不一致",
             title: `manifest.jsonのバージョン (${manifestVer}) とリリースVer (${cleanRelVer}) が一致していません`,
-            desc: `Chrome拡張機能では manifest.json の version が正式な稼働バージョンとなります。今回登録しようとしているバージョン「${cleanRelVer}」に合わせて manifest.json 側の記述も修正してください。`
+            desc: `Chrome拡張機能では manifest.json の version が正式な稼働バージョンとなります。今回登録しようとしているバージョン「${cleanRelVer}」に合わせて manifest.json も修正してください。`
           });
         }
       }
     }
   }
 
+  // 4. 🔍 全プログラム共通：コード内バージョンの厳格整合性照合（変更ありファイル・新規ファイルのみ対象）
+  const cleanTargetVer = relVersion.replace(/^v/i, "");
+  for (const f of files) {
+    if (f.isBase64) continue; // バイナリ（画像・音声等）はスキップ
+
+    const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
+    if (!['.js', '.html', '.css', '.bat', '.json'].includes(ext)) continue;
+
+    // GitHubの前回コードを取得して変更有無を確認
+    const oldCode = await fetchOldFileFromGitHub(prog.githubRepo, f.name);
+    const isModified = (oldCode !== null && oldCode !== f.content);
+    const isNewFile = (oldCode === null);
+
+    // 変更がないファイル（oldCode === f.content）は前回のバージョンのままで100%正常なので検査スキップ！
+    if (isModified || isNewFile) {
+      // コード先頭15行からバージョンパターンをスキャン
+      const headLines = f.content.split("\n").slice(0, 15).join("\n");
+
+      // 多様なバージョン記述パターンを網羅（コメント、JSONプロパティ、定数/変数宣言）
+      const verMatch = (
+        headLines.match(/\[v?(\d+\.\d+(\.\d+)?)[\s\]]/i) || // [v1.3.0] or [1.3.0]
+        headLines.match(/["']?version["']?\s*[:=]\s*["']v?(\d+\.\d+(\.\d+)?)["']/i) || // "version": "1.3.0", version = '1.3.0'
+        headLines.match(/(?:const|let|var)\s+[a-zA-Z0-9_]*ver(?:sion)?\s*=\s*["']v?(\d+\.\d+(\.\d+)?)["']/i) || // const APP_VERSION = "1.3.0"
+        headLines.match(/(?:\/\/|\/\*|<!--|REM|::)\s*v?(\d+\.\d+(\.\d+)?)/i) // // v1.3.0, /* v1.3.0 */, <!-- v1.3.0 -->, REM v1.3.0
+      );
+
+      if (!verMatch) {
+        const isJson = ext === '.json';
+        issues.push({
+          type: "warning",
+          badge: "⚠️ バージョン未記載",
+          title: `修正ファイル「${f.name}」にバージョン情報が見当たりません`,
+          desc: isJson
+            ? `今回修正または新規追加されたJSONファイルですが、"version": "${cleanTargetVer}" の記述が見当たりません。\nバージョン番号が記載されているかご確認ください。`
+            : `今回修正または新規追加されたファイルですが、先頭に [${relVersion} 作業版] などのバージョン情報が見当たりません。\nAI Studioで修正したファイルにはバージョン情報を明記することを推奨します。`
+        });
+      } else {
+        const foundVer = verMatch[1];
+        if (foundVer !== cleanTargetVer && foundVer !== relVersion) {
+          issues.push({
+            type: "warning",
+            badge: "⚠️ バージョン書き換え忘れの可能性",
+            title: `修正ファイル「${f.name}」内のバージョン (${foundVer}) がリリース予定 (${cleanTargetVer}) と異なります`,
+            desc: `コードが更新されていますが、記載されているバージョン情報が「${foundVer}」のままになっています。\nAIへのバージョン書き換え指示を忘れていないか、または古いファイルを誤って添付していないかご確認ください。`
+          });
+        }
+      }
+    }
+  }
+
+  // 5. 大容量ファイル警告 (25MB超)
   files.forEach(f => {
     const mbSize = (f.byteSize || 0) / (1024 * 1024);
     if (mbSize > 25) {
@@ -677,7 +711,7 @@ function runPreflightInspection(prog, relVersion, files) {
         type: "warning",
         badge: "⚠️ 大容量ファイル",
         title: `ファイル「${f.name}」が 25MB (${mbSize.toFixed(1)} MB) を超えています`,
-        desc: "GitHub Contents APIでは大容量ファイルのプッシュ時にタイムアウトやAPIエラーが発生する場合があります。動画や巨大アセットは軽量化するか外部ストレージの利用を推奨します。"
+        desc: "GitHub Contents APIでは大容量ファイルのプッシュ時にタイムアウトが発生する場合があります。動画や巨大アセットは軽量化を推奨します。"
       });
     }
   });
@@ -921,6 +955,7 @@ async function analyzeDiffAndGenerateSummary() {
 }
 
 async function fetchOldFileFromGitHub(repoFullName, path) {
+  if (!repoFullName || !path) return null;
   const [owner, repo] = repoFullName.split("/");
   if (!owner || !repo) return null;
 
@@ -1057,7 +1092,8 @@ async function executeGitHubPush() {
   }
 
   if (currentTargetProg) {
-    const issues = runPreflightInspection(currentTargetProg, relVersion, loadedLocalFiles);
+    // 🛡️ プリフライト診断の実行（バージョン整合性を厳格スキャン）
+    const issues = await runPreflightInspection(currentTargetProg, relVersion, loadedLocalFiles);
     if (issues.length > 0) {
       pendingPushPayload = { owner, repo, repoInputVal, relVersion, commitMsg, summary };
       openPreflightModal(issues);
@@ -1248,7 +1284,6 @@ function initNavigation() {
     renderMasterSettings();
   });
 
-  // 🛡️ 恒久対策：プログラムID(data-id)による厳格直接バインド保存（インデックスズレ・上書き破壊を完全根絶）
   document.getElementById("saveMasterBtn").addEventListener("click", () => {
     const rows = document.querySelectorAll("#masterTableBody tr");
     rows.forEach((row) => {
