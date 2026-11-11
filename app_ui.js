@@ -1,4 +1,4 @@
-// [v1.2.0 作業版 Rev.2] renderProgramDashboardからのデータ副作用完全撤去＆純粋描画化による画面遷移時データ破壊の根絶
+// [v1.3.0 作業版 Rev.2] GitHubセーブ前は「🧪 動作確認中 (未セーブ)」バッジ＆Change Log前回実績の正確連動UI
 
 // === タブ1: IDモニター ＆ トークン管理 ===
 function setupCards() {
@@ -289,8 +289,10 @@ function updateCardValues() {
             idProgVerBadge.className = "id-prog-ver-badge uncommitted";
             idProgVerBadge.innerText = "🌱 初回構築中";
           } else {
+            // 前回の正式セーブ実績をベースバージョンとして表示
+            const baseSavedVer = (assignedProg.saveHistory && assignedProg.saveHistory[0]) ? assignedProg.saveHistory[0].version : assignedProg.version;
             idProgVerBadge.className = "id-prog-ver-badge";
-            idProgVerBadge.innerText = `🟢 ベース: ${assignedProg.version || 'v1.0.0'}`;
+            idProgVerBadge.innerText = `🟢 ベース: ${baseSavedVer || 'v1.0.0'}`;
           }
         } else {
           idProgVerBadge.style.display = "none";
@@ -343,7 +345,7 @@ function updateCardValues() {
   }
 }
 
-// === タブ2: プログラム管理・エンハンス (純粋描画化・データ副作用完全排除) ===
+// === タブ2: プログラム管理・エンハンス (ステータス連動バッジ ＆ 純粋描画) ===
 function renderProgramDashboard() {
   const chartList = document.getElementById("chartList");
   const progCardList = document.getElementById("progCardList");
@@ -351,7 +353,6 @@ function renderProgramDashboard() {
   chartList.innerHTML = "";
   progCardList.innerHTML = "";
 
-  // 🛡️ 恒久対策：描画関数内でのマイグレーション（副作用）を完全撤廃。純粋な表示専用とする。
   updateAppVersionBadge();
 
   if (programsData.length === 0) {
@@ -369,9 +370,24 @@ function renderProgramDashboard() {
     const notes = prog.inboxNotes || [];
     const history = prog.saveHistory || [];
     const isInitialUncommitted = (history.length === 0);
-    const activeVersion = isInitialUncommitted ? "未セーブ" : (prog.version || "v1.0.0");
     const repoDisplayName = prog.githubRepo || "未設定 (セーブ時に入力可能)";
     const isWebPublish = !!prog.isWebPublish;
+
+    // 🏷️ 直近にGitHubへセーブされた本物の実績バージョン
+    const latestSavedVer = (history.length > 0 && history[0].version) ? history[0].version : null;
+
+    // 🧪 動作確認中（未セーブ）判定：手元でバージョンが上がっているが、まだGitHubに未セーブの状態
+    const isTesting = (!isInitialUncommitted && latestSavedVer && prog.version && prog.version !== latestSavedVer);
+
+    // バッジHTMLの生成（3段階：初回登録待ち / 動作確認中(未セーブ) / 正式稼働版）
+    let versionBadgeHtml = "";
+    if (isInitialUncommitted) {
+      versionBadgeHtml = `<span class="prog-version-badge uncommitted">🌱 初回登録待ち</span>`;
+    } else if (isTesting) {
+      versionBadgeHtml = `<span class="prog-version-badge testing" title="ローカルで動作確認中の次期バージョンです。GitHubへセーブすると正式な稼働版へ自動昇格します">🧪 動作確認中: ${escapeHtml(prog.version)} (未セーブ)</span>`;
+    } else {
+      versionBadgeHtml = `<span class="prog-version-badge">🟢 稼働版: ${escapeHtml(prog.version || 'v1.0.0')}</span>`;
+    }
 
     const activeWorkingIds = [];
     for (let i = 1; i <= 4; i++) {
@@ -490,11 +506,16 @@ function renderProgramDashboard() {
       const latest = history[0];
       const olderList = history.slice(1);
 
+      // Change Logの見出し（未セーブ時は「前回実績: vX.X.X」、セーブ後は「最新稼働版: vX.X.X」と完璧に整合）
+      const logHeaderLabel = isTesting
+        ? `前回実績: ${escapeHtml(latestSavedVer)}`
+        : `最新稼働版: ${escapeHtml(latest.version || prog.version)}`;
+
       let historyHtml = `
         <div class="latest-history-box">
           <div class="latest-history-header">
             <div class="latest-history-left">
-              <span class="latest-ver-badge">${escapeHtml(latest.version || activeVersion)}</span>
+              <span class="latest-ver-badge">${escapeHtml(latest.version || latestSavedVer)}</span>
               <span class="latest-commit-title" title="${escapeHtml(latest.commitMsg)}">${escapeHtml(latest.commitMsg)}</span>
             </div>
             <span class="latest-history-date">${escapeHtml(latest.dateStr)}</span>
@@ -566,7 +587,7 @@ function renderProgramDashboard() {
 
         <div class="history-section">
           <div class="history-head">
-            <span>📜 リリース実績・Change Log (稼働版: ${escapeHtml(activeVersion)})</span>
+            <span>📜 リリース実績・Change Log (${logHeaderLabel})</span>
             <div class="history-head-right">
               <button class="edit-history-btn" data-prog-id="${prog.id}">📜 履歴の確認・補正</button>
             </div>
@@ -590,9 +611,7 @@ function renderProgramDashboard() {
       <div class="prog-card-header">
         <div class="prog-card-title-group">
           <span class="prog-card-title">📦 ${escapeHtml(prog.name)}</span>
-          <span class="prog-version-badge ${isInitialUncommitted ? 'uncommitted' : ''}">
-            ${isInitialUncommitted ? '🌱 初回登録待ち' : `🟢 稼働版: ${escapeHtml(activeVersion)}`}
-          </span>
+          ${versionBadgeHtml}
           ${publishBadgeHtml}
           ${workBadgeHtml}
         </div>
@@ -869,8 +888,10 @@ function attachEnhanceEvents() {
       const pid = btn.dataset.progId;
       const planId = btn.dataset.planId;
       const titleInput = document.querySelector(`.inline-title-input[data-plan-id="${planId}"]`);
+      const verInput = document.querySelector(`.inline-ver-input[data-plan-id="${planId}"]`);
       const promptArea = document.querySelector(`.inline-prompt-area[data-plan-id="${planId}"]`);
       const title = titleInput?.value.trim() || "";
+      const targetVer = verInput?.value.trim() || "v1.0.0";
 
       if (!title) {
         alert("計画タイトルを入力してください。");
@@ -885,7 +906,7 @@ function attachEnhanceEvents() {
       btn.innerText = "⏳ AI起草中...";
 
       try {
-        const aiResult = await generateBreakdownPromptWithAI(title);
+        const aiResult = await generateBreakdownPromptWithAI(title, targetVer);
         if (promptArea) promptArea.value = aiResult.prompt;
         
         const prog = programsData.find(p => p.id === pid);
@@ -1365,18 +1386,37 @@ function initEnhanceModalHandlers() {
   const closeDispatchBtn = document.getElementById("closeDispatchModalBtn");
   closeDispatchBtn.onclick = () => dispatchOverlay.classList.remove("active");
 
+  // 🚀 「▶ 着手」を押した瞬間に、予定バージョンをピンポイント指定した厳格ルールを自動合成してコピー！
   document.querySelectorAll(".dispatch-pick-btn").forEach(btn => {
     btn.onclick = (e) => {
       const accId = e.target.dataset.account;
       if (!currentTargetProg || !currentTargetPlan) return;
 
+      const targetVer = currentTargetPlan.targetVer || "次期版";
+
       accountsData[accId].currentProgramId = currentTargetProg.id;
-      accountsData[accId].theme = `[${currentTargetPlan.targetVer || '次期版'}] ${currentTargetPlan.title}`;
+      accountsData[accId].theme = `[${targetVer}] ${currentTargetPlan.title}`;
       if (currentTargetPlan.prompt) {
         accountsData[accId].notes = currentTargetPlan.prompt;
       }
 
-      const textToCopy = currentTargetPlan.prompt || `■ 実装計画: [${currentTargetPlan.targetVer || '次期版'}] ${currentTargetPlan.title}\nこの機能の開発を開始してください。`;
+      const bodyRequirement = currentTargetPlan.prompt || `■ 実装要件: ${currentTargetPlan.title}\nこの機能の開発を開始してください。`;
+
+      // 🛡️ 黄金ワークフロー：予定バージョンを1発目からAIに名乗らせる厳格ルールヘッダーを自動付与
+      const textToCopy = `【バージョン管理およびファイル出力の厳格ルール】
+1. 今回の作業バージョン: 【${targetVer}】
+2. 修正対象のファイルのみ出力すること:
+   - 修正を行うファイルだけを出力し、修正のないファイルは一切出力しないでください。
+   - 今回修正したファイルには、必ず1行目に以下のリビジョンコメントを記載してください:
+     ・JavaScript: // [${targetVer} 作業版 Rev.◯] 今回の修正要約
+     ・HTML: <!-- [${targetVer} 作業版 Rev.◯] 今回の修正要約 -->
+     ・CSS: /* [${targetVer} 作業版 Rev.◯] 今回の修正要約 */
+3. 修正のないファイルの不可侵:
+   - 今回修正しなかったファイルは、以前の古いバージョンのままで正常です。無理にバージョンを書き換えたり出力したりしないでください。
+
+【今回の改修要件】
+${bodyRequirement}`;
+
       navigator.clipboard.writeText(textToCopy).then(() => {
         dispatchOverlay.classList.remove("active");
         openedPlanIds.delete(currentTargetPlan.id);
@@ -1390,24 +1430,25 @@ function initEnhanceModalHandlers() {
         document.querySelector('.tab-btn[data-tab="tab1"]').classList.add("active");
         document.getElementById("tab1").classList.add("active");
 
-        alert(`✅ 【ID ${accId}】に「${currentTargetPlan.title}」をセットしました！\n\nAI Studio用の指示プロンプトをクリップボードにコピー済みです。\nそのままID ${accId} の「このタブを開く」を押して、AI Studioに貼り付け（Ctrl+V）して開発を開始してください！`);
+        alert(`✅ 【ID ${accId}】に「${currentTargetPlan.title}」をセットしました！\n\nAI Studio用の指示プロンプト（予定バージョン: ${targetVer} 指定済み）をクリップボードにコピーしました！\nそのままID ${accId} の「このタブを開く」を押して、AI Studioに貼り付け（Ctrl+V）して開発を開始してください！`);
       });
     };
   });
 }
 
-async function generateBreakdownPromptWithAI(planTitle) {
+async function generateBreakdownPromptWithAI(planTitle, targetVer = "次期版") {
   const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
   const fullSourceCode = await loadFullExtensionSourceCode();
 
   const prompt = `あなたはプロのシニアソフトウェアエンジニア兼テックリードです。
-ユーザーがキーワードとして入力した【計画タイトル】について、現在稼働している全ソースコードを熟読した上で、
+ユーザーがキーワードとして入力した【計画タイトル】について、予定バージョン【${targetVer}】に合わせて、現在稼働している全ソースコードを熟読した上で、
 ①「AI Studioにそのまま貼り付けて一発で開発を開始できる高品質な指示プロンプト」
 ②「難易度と改修方針のアドバイス」
 の2点を作成してください。
 
 【計画タイトル】: ${planTitle}
+【予定バージョン】: ${targetVer}
 
 【厳格な指示】
 以下の「=== PROMPT ===」と「=== ADVICE ===」のセパレーターで区切ってプレーンテキストで出力してください。
