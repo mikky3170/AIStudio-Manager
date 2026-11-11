@@ -1,4 +1,4 @@
-<!-- [v1.4.0 作業版 Rev.2] ガイドへの「代表ファイル1箇所集中バージョンルール」追加およびスパーリングUI最適化 -->
+<!-- [v1.4.1 作業版 Rev.1] アイデア壁打ちモーダルのOverlayクラス名修正による常時露出の解消およびポップアップ表示復旧 -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -931,7 +931,7 @@
     .badge-triage.create { background: #059669; color: white; }
     .badge-cost { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: #1e293b; color: #cbd5e1; border: 1px solid #475569; }
 
-    /* 💬 アイデア壁打ち（第1段階の頭の整理）モーダル - ワイド＆ゆったり表示対応 */
+    /* 💬 アイデア壁打ち（第1段階の頭の整理 ＆ 計画昇格）モーダル - ワイド＆ゆったり表示対応 */
     .modal-overlay#sparringModalOverlay .modal-card { width: 840px; max-width: 92vw; max-height: 90vh; }
     .sparring-source-box { background: #0f172a; border: 1px solid #1e3a8a; border-left: 4px solid #38bdf8; padding: 10px 14px; border-radius: 6px; font-size: 12px; color: #cbd5e1; line-height: 1.5; white-space: pre-wrap; }
     .sparring-chat-container { display: flex; flex-direction: column; gap: 10px; min-height: 220px; max-height: 420px; overflow-y: auto; background: #090d16; padding: 14px; border-radius: 8px; border: 1px solid #334155; }
@@ -1377,8 +1377,8 @@
     </div>
   </div>
 
-  <!-- 💬 アイデア壁打ち（第1段階の頭の整理 ＆ 計画昇格）モーダル - ワイド＆ゆったり表示対応 -->
-  <div class="modal-overlay#sparringModalOverlay" id="sparringModalOverlay">
+  <!-- 💬 アイデア壁打ち（第1段階の頭の整理 ＆ 計画昇格）モーダル - 正しいOverlayクラス名へ修復 -->
+  <div class="modal-overlay" id="sparringModalOverlay">
     <div class="modal-card" style="width: 840px;">
       <div class="modal-header">
         <h2 id="sparringModalTitle">💬 アイデアの壁打ち（頭の整理 ➜ 正式計画へ昇格）</h2>
