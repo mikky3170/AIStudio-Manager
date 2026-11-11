@@ -1,4 +1,4 @@
-<!-- [v1.2.0 作業版 Rev.1] スクリプト3分割構成(app_core.js, app_ui.js, app_concierge.js)への移行およびバージョン1.2.0適用 -->
+<!-- [v1.3.0 作業版 Rev.2] 未セーブ時の動作確認中バッジスタイル追加 ＆ バージョンステータス連動UI -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -301,8 +301,29 @@
     .prog-card-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
     .prog-card-title-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
     .prog-card-title { font-size: 14px; font-weight: 700; color: #38bdf8; }
-    .prog-version-badge { background: #065f46; border: 1px solid #10b981; color: #a7f3d0; font-size: 11.5px; font-weight: 800; padding: 2px 8px; border-radius: 5px; }
-    .prog-version-badge.uncommitted { background: #451a03; border-color: #f59e0b; color: #fbbf24; }
+    
+    /* 🏷️ バージョンステータスバッジ（正式稼働版 / 動作確認中 / 初回待ち） */
+    .prog-version-badge {
+      background: #065f46;
+      border: 1px solid #10b981;
+      color: #a7f3d0;
+      font-size: 11.5px;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 5px;
+      white-space: nowrap;
+    }
+    .prog-version-badge.testing {
+      background: #854d0e;
+      border-color: #facc15;
+      color: #fef08a;
+      box-shadow: 0 0 8px rgba(250, 204, 21, 0.35);
+    }
+    .prog-version-badge.uncommitted {
+      background: #451a03;
+      border-color: #f59e0b;
+      color: #fbbf24;
+    }
     
     .badge-publish-mode {
       font-size: 11px;
@@ -829,7 +850,7 @@
     .btn-secondary { background: #334155; border: 1px solid #475569; color: #cbd5e1; padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.15s; white-space: nowrap; }
     .btn-secondary:hover { background: #475569; }
 
-    /* タブ5: ガイド */
+    /* 📖 タブ5: ガイド（詳細完全版レイアウト） */
     .guide-container { display: flex; flex-direction: column; gap: 20px; max-width: 1100px; margin: 0 auto; padding-bottom: 40px; }
     .guide-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 22px 26px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 4px 8px rgba(0,0,0,0.25); transition: border-color 0.3s, box-shadow 0.3s; }
     .guide-card h2 { font-size: 16px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
@@ -986,7 +1007,7 @@
     <div class="header-left">
       <h1>
         <span>Studio マネージャー</span>
-        <span class="app-version-badge" id="appVersionBadge">v1.2.0</span>
+        <span class="app-version-badge" id="appVersionBadge">v1.3.0</span>
       </h1>
       <div class="nav-tabs">
         <button class="tab-btn active" data-tab="tab1">① IDモニター (残量・メーター)</button>
@@ -1156,35 +1177,75 @@
     </div>
   </div>
 
-  <!-- タブ5: ガイド -->
+  <!-- 📖 タブ5: ガイド（詳細完全版マニュアル復元） -->
   <div class="tab-content" id="tab5">
     <div class="guide-container">
+      
       <div class="guide-card">
-        <h2>💡 1. 目的とコンセプト</h2>
+        <h2>💡 1. 目的と開発コンセプト</h2>
         <p><strong>なぜStudioマネージャーが必要なのか？</strong><br>
-        Google AI Studioの無料枠には1アカウントごとの日次利用制限が存在します。4つのアカウント（ID 1〜4）を切り替えて開発する中で起きる「どのアカウントが残りどれくらいか分からない」「チャットが長くなってクラッシュする」「IDを切り替えると過去の決定事項を忘れて先祖返り（デグレード）する」という課題を根本解決するために作られました。</p>
+        Google AI Studioの無料枠には1アカウントごとの日次利用制限が存在します。4つのアカウント（ID 1〜4）を切り替えて複数のプログラムを並行開発する中で起きる「どのアカウントが残りどれくらいか分からない」「チャットが長くなって突然クラッシュ・エラーを起こす」「IDを切り替えると過去の決定事項を忘れて先祖返り（デグレード）してしまう」という3大課題を根本解決するために作られました。</p>
+        <p>本拡張機能は、AI Studioのタブをリアルタイムに自動検知し、使用量を可視化しながら、蓄積されたナレッジとGitHubセーブを一体化して開発を力強く支援します。</p>
       </div>
 
       <div class="guide-card" style="border-color: #f59e0b; background: #1c1917;">
         <h2 style="color: #fbbf24;">⚠️ 2. 【最重要】30万〜40万トークンの壁と「スマート引越しサイクル」</h2>
         <p><strong>Google AI Studioでは、1つのチャットを長く続けすぎてはいけません。</strong><br>
-        チャットが長大化すると、毎回の指示で過去の全ログをGoogleのサーバーに再送信して再推論するため、ブラウザの激重化や「An internal error has occurred」の多発につながります。</p>
+        チャットが30万トークンを超えて長大化すると、毎回のプロンプト送信で過去の全ログをGoogleのサーバーに再送信して再推論するため、ブラウザの激重化・メモリ圧迫や「An internal error has occurred」の多発につながります。</p>
+        <h3>🔄 安全なスマート引越し手順（黄金サイクル）:</h3>
+        <ol>
+          <li>チャットが30万トークンに達すると、AI Studio画面右上のボタンがオレンジ色の警告表示 <strong>[⚠️ 300k+ tk (F5更新 ➜ 要約＆新チャット推奨)]</strong> に変わります。</li>
+          <li>まずキーボードの <strong>【F5】キー</strong> を押してAI Studioのタブを再読み込みし、溜まったブラウザメモリを解放します。</li>
+          <li>画面右上の <strong>[🧠 ナレッジ要約してマネージャーへ同期]</strong> ボタンを押します。Geminiが全セッションを読み解き、決定事項とノウハウを凝縮したカードを作成してマネージャーへ同期します。</li>
+          <li>IDモニターの <strong>[このタブを開く]</strong> を押して、まっさらな <strong>新規チャット（New Chat）</strong> を開きます。</li>
+          <li>マネージャーの「③ 開発ナレッジ要約」タブを開き、一番上に並んでいる最新カードの <strong>[📋 引継ぎプロンプトをコピー]</strong> を押して、新チャットに貼り付けて送信します。</li>
+          <li>過去の経緯・決定事項を100%引き継いだ状態で、軽快かつ安全に開発を続行できます！</li>
+        </ol>
       </div>
 
       <div class="guide-card">
         <h2>📊 3. IDモニターの2大指標とステータス運用</h2>
-        <p>メーターは20%〜80%が自動表示（手動変更不可）、100%は手動専用です。バッジクリックで通常・警戒・停止を自由に切り替えられます。作業中プログラムのベースバージョンも直感的に確認できます。</p>
+        <p>IDモニターには、各アカウントの利用状況を正確に把握するための2大指標が備わっています。</p>
+        <ul>
+          <li><strong>📊 累計トークン</strong>: 本日そのアカウントで消費した総トークン量です（17:00 JSTに自動リセット）。開いた後の増分のみを正確にカウントし、過去チャットを開いたときの誤爆加算は発生しません。万が一のズレは <strong>[✏️]</strong> ボタンで即座に手動補正可能です。</li>
+          <li><strong>💬 現在のチャット長</strong>: いま画面に開いている1つのチャットの長さです。30万トークンを超えると黄色い警告バッジが点灯します。</li>
+          <li><strong>メーター仕様</strong>: 20% / 40% / 60% / 80% は本日の累計消費に応じて自動点灯します（手動変更不可）。100% のみ手動専用で、クリックでリミット到達（停止）を切り替えます。</li>
+          <li><strong>ステータスバッジ</strong>: IDバッジの右側のボタンをクリックすると、[⚠️ 未達] ➜ [⚡ エラー警戒] ➜ [⛔ 停止] を手動でトグル切り替えできます。</li>
+          <li><strong>ベースVerバッジ</strong>: 対象プログラムが選択されると、現在どのバージョンを元に作業しているかが一目で分かります。</li>
+        </ul>
       </div>
 
       <div class="guide-card">
         <h2>🧠 4. 開発ナレッジ要約とデグレード防止</h2>
-        <p>最新の要約カードが常に一番上（⭐ 最新決定版）に配置されます。カード上のベースバージョンバッジをクリックすることで、そのチャットがどのバージョンを元にした作業だったかを後から自在に選択・補正できます。検索窓にキーワードを入力すると、該当箇所が黄色くハイライトされます。</p>
+        <p>AI Studioで要約ボタンを押すと、このタブに「開発ナレッジカード」が蓄積されます。</p>
+        <ul>
+          <li><strong>⭐ 最新決定版</strong>: 最も新しく要約されたカードが常に最上段に配置され、最新の決定事項として強調されます。</li>
+          <li><strong>プログラム・ベースVerの自在な補正</strong>: カード上のプログラムバッジやベースVerバッジをクリックすることで、所属プログラムや元となったバージョンを後から自由に付け替え可能です。</li>
+          <li><strong>リアルタイム検索ハイライト</strong>: 画面上部の検索窓にキーワード（例: 「音声」「CSS」「引越し」等）を入力すると、該当するテキストが黄色くハイライト表示されます。</li>
+        </ul>
       </div>
 
       <div class="guide-card">
-        <h2>📦 5. プログラム分析とGitHubセーブ履歴</h2>
-        <p>各プログラムのエンハンス計画から「🚀 セーブ」を押してファイルをドロップすると、プログラム個別のリポジトリへ差分解析＋Gemini自動要約でREADMEを更新しながらプッシュされます。</p>
+        <h2>📦 5. プログラム管理・エンハンス計画 ＆ GitHubセーブ</h2>
+        <p>01〜10番の全プログラムのロードマップ管理と、GitHubへの安全な直接プッシュ機能です。</p>
+        <ul>
+          <li><strong>アイデア計画化</strong>: [＋機能追加]（Minor: +0.1.0）や [＋バグ修正]（Patch: +0.0.1）を押すだけで、次期バージョンが自動採番されて計画キューにストックされます。</li>
+          <li><strong>AIプロンプト自動起草 ＆ 着手</strong>: [✨ AIでブレークダウン] を押すと指示プロンプトが自動生成され、[▶ 着手] を押すだけで対象アカウントへのアサインと、予定バージョン固定ルールが付与されたプロンプトのコピーがワンクリックで完了します。</li>
+          <li><strong>💡 気付き・備忘録 (Inbox)</strong>: 使っていて気づいた違和感を殴り書きストックし、[✨ AI仕分け] を押すと重複統合やパッケージ化をAIが自動提案します。</li>
+          <li><strong>🚀 計画直結セーブ ＆ プリフライト診断</strong>: 計画の [🚀 セーブ] を押して完成ファイルをドロップすると、GitHubの前回コードと自動照合（差分解析）し、Geminiが分かりやすいChange Logを自動起草してリポジトリへ直接プッシュされます。</li>
+        </ul>
       </div>
+
+      <div class="guide-card">
+        <h2>💬 6. 専任AIコンシェルジュの使い方</h2>
+        <p>画面右下に常駐するフローティングパネルから、いつでも専任シニアエンジニアに相談できます。</p>
+        <ul>
+          <li><strong>マウスドラッグ移動</strong>: ヘッダー部分をマウスで掴んで、画面上の好きな位置へ自由に移動できます。</li>
+          <li><strong>🎙️ 音声入力 ＆ 赤色波形ビジュアライザー</strong>: マイクボタンを押すと、話し終わるまでじっくり音声認識を行い、不要な言い淀み（「えーっと」等）を自動除去して美しい日本語に清書してくれます。</li>
+          <li><strong>コード全把握の的確な回答</strong>: 本システムの全ソースコードとマニュアルを把握した上で、原則3〜4行で結論ファーストの案内をしてくれます。もっと詳しく知りたいときは [📖 もっと詳しく解説] を押してください。</li>
+        </ul>
+      </div>
+
     </div>
   </div>
 
@@ -1312,7 +1373,7 @@
 
         <div>
           <label class="field-label">📌 コミットメッセージ (1行要約)</label>
-          <input type="text" class="commit-input" id="commitMessageInput" placeholder="例: v1.2.0: AIコンシェルジュ機能の強化">
+          <input type="text" class="commit-input" id="commitMessageInput" placeholder="例: v1.3.0: 安定性の向上とバージョン管理の強化">
         </div>
 
         <div>
