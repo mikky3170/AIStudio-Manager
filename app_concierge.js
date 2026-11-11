@@ -1,4 +1,4 @@
-// [v1.2.0 作業版 Rev.1] 専任AIコンシェルジュ・音声認識・音量ビジュアライザー・システム全体のブートストラップ実行
+// [v1.4.0 作業版 Rev.1] アイデア壁打ち初期化ハンドラの組み込みおよびv1.4.0起動ログへの同期
 
 let conciergeChatHistory = [];
 let speechRecognizer = null;
@@ -491,7 +491,7 @@ ${fullSourceCode}
 
 // === システム全体のブートストラップ ＆ 変更監視エンジン ===
 function bootstrap() {
-  console.log(`🚀 Studioマネージャー v1.2.0 起動完了`);
+  console.log(`🚀 Studioマネージャー v1.4.0 起動完了`);
 
   initNavigation();
   initModalHandlers();
@@ -499,6 +499,7 @@ function bootstrap() {
   initEnhanceModalHandlers();
   initHistoryModalHandlers();
   initTriageModalHandlers();
+  initSparringModalHandlers(); // 💡 アイデア壁打ちモーダルハンドラの確実な登録
   initTokenCorrectModalHandlers();
   initConciergeHandlers();
   updateCountdown();
