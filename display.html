@@ -1,4 +1,4 @@
-<!-- [v1.3.0 作業版 Rev.2] 未セーブ時の動作確認中バッジスタイル追加 ＆ バージョンステータス連動UI -->
+<!-- [v1.4.0 作業版 Rev.2] ガイドへの「代表ファイル1箇所集中バージョンルール」追加およびスパーリングUI最適化 -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -361,7 +361,7 @@
       gap: 6px;
     }
 
-    /* 💡 気付き・備忘録 (Inbox) エリア */
+    /* 💡 気付き・備忘録 (Inbox / アイデアの卵) エリア */
     .inbox-section {
       background: #111d33;
       border: 1px dashed #38bdf8;
@@ -399,23 +399,29 @@
     }
     .inbox-section.open .inbox-body-collapsible { display: flex; }
 
-    .inbox-input-row { display: flex; gap: 8px; align-items: center; }
-    .inbox-input {
-      flex: 1;
-      min-width: 0;
+    /* 複数行ゆったり入力対応 */
+    .inbox-input-container { display: flex; flex-direction: column; gap: 6px; }
+    .inbox-textarea {
+      width: 100%;
+      height: 60px;
       background: #0f172a;
       border: 1px solid #475569;
       color: #f8fafc;
-      padding: 7px 12px;
+      padding: 8px 12px;
       border-radius: 6px;
       font-size: 12px;
+      line-height: 1.45;
+      resize: vertical;
     }
-    .inbox-input:focus { border-color: #38bdf8; outline: none; }
+    .inbox-textarea:focus { border-color: #38bdf8; outline: none; }
+    
+    .inbox-submit-bar { display: flex; justify-content: space-between; align-items: center; }
+    .inbox-hint { font-size: 11px; color: #64748b; }
     .btn-inbox-add {
       background: #0284c7;
       border: none;
       color: white;
-      padding: 7px 14px;
+      padding: 6px 14px;
       border-radius: 6px;
       font-size: 11.5px;
       font-weight: 700;
@@ -445,7 +451,7 @@
       display: flex;
       flex-direction: column;
       gap: 6px;
-      max-height: 180px;
+      max-height: 240px;
       overflow-y: auto;
     }
     .inbox-note-item {
@@ -453,15 +459,30 @@
       border: 1px solid #1e3a8a;
       border-left: 3px solid #38bdf8;
       border-radius: 5px;
-      padding: 6px 10px;
+      padding: 8px 12px;
       font-size: 11.5px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 10px;
     }
-    .inbox-note-text { color: #e2e8f0; line-height: 1.4; flex: 1; word-break: break-all; }
+    .inbox-note-text { color: #e2e8f0; line-height: 1.45; flex: 1; word-break: break-all; white-space: pre-wrap; }
+    .inbox-note-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     .inbox-note-date { color: #64748b; font-size: 10px; white-space: nowrap; }
+    
+    .btn-note-sparring {
+      background: #0c213b;
+      border: 1px solid #0284c7;
+      color: #38bdf8;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.15s;
+      white-space: nowrap;
+    }
+    .btn-note-sparring:hover { background: #0284c7; color: white; }
     .btn-del-inbox-note { background: transparent; border: none; color: #ef4444; font-size: 13px; cursor: pointer; padding: 0 4px; }
 
     .initial-setup-banner {
@@ -531,6 +552,10 @@
 
     .enhance-item-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
     
+    /* 🚀 時系列順ボタン配置（着手・編集 ➜ セーブ ➜ 削除） */
+    .toggle-expand-btn { background: #1e293b; border: 1px solid #475569; color: #cbd5e1; padding: 4px 9px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; transition: 0.15s; }
+    .toggle-expand-btn:hover { background: #334155; color: white; border-color: #38bdf8; }
+    
     .btn-plan-save-row {
       background: #238636;
       border: 1px solid #2ea043;
@@ -549,9 +574,6 @@
       background: #2ea043;
       box-shadow: 0 0 8px rgba(46, 160, 67, 0.5);
     }
-
-    .toggle-expand-btn { background: #1e293b; border: 1px solid #475569; color: #cbd5e1; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: 0.15s; }
-    .toggle-expand-btn:hover { background: #334155; color: white; border-color: #38bdf8; }
     .del-plan-btn { background: transparent; border: none; color: #ef4444; font-size: 13px; cursor: pointer; padding: 0 4px; }
 
     .enhance-inline-panel {
@@ -567,6 +589,10 @@
     .inline-field-row { display: flex; gap: 10px; align-items: center; }
     .inline-input { background: #1e293b; border: 1px solid #475569; color: #f8fafc; padding: 6px 10px; border-radius: 6px; font-size: 12px; }
     .inline-textarea { width: 100%; height: 110px; background: #1e293b; border: 1px solid #475569; color: #f8fafc; padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.45; resize: vertical; }
+
+    .char-count-label { font-size: 10.5px; color: #64748b; font-weight: normal; }
+    .char-count-label.warn { color: #f59e0b; font-weight: bold; }
+    .char-count-label.danger { color: #ef4444; font-weight: bold; }
 
     .inline-actions-row { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; flex-wrap: wrap; gap: 8px; }
     .inline-btn-group-right { display: flex; gap: 8px; }
@@ -905,6 +931,15 @@
     .badge-triage.create { background: #059669; color: white; }
     .badge-cost { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: #1e293b; color: #cbd5e1; border: 1px solid #475569; }
 
+    /* 💬 アイデア壁打ち（第1段階の頭の整理）モーダル - ワイド＆ゆったり表示対応 */
+    .modal-overlay#sparringModalOverlay .modal-card { width: 840px; max-width: 92vw; max-height: 90vh; }
+    .sparring-source-box { background: #0f172a; border: 1px solid #1e3a8a; border-left: 4px solid #38bdf8; padding: 10px 14px; border-radius: 6px; font-size: 12px; color: #cbd5e1; line-height: 1.5; white-space: pre-wrap; }
+    .sparring-chat-container { display: flex; flex-direction: column; gap: 10px; min-height: 220px; max-height: 420px; overflow-y: auto; background: #090d16; padding: 14px; border-radius: 8px; border: 1px solid #334155; }
+    .sparring-bubble { padding: 10px 14px; border-radius: 8px; font-size: 12.5px; line-height: 1.6; word-break: break-word; }
+    .sparring-bubble.ai { background: #1e293b; border: 1px solid #1e40af; color: #f8fafc; align-self: flex-start; }
+    .sparring-bubble.user { background: #0284c7; color: white; align-self: flex-end; }
+    .sparring-proposal-grid { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 10px; align-items: start; background: #172554; padding: 12px; border-radius: 8px; border: 1px solid #1e40af; }
+
     /* 🚀 着手アカウント選択ポップアップモーダル */
     .modal-overlay#dispatchModalOverlay .modal-card { width: 450px; }
     .dispatch-pick-btn { padding: 12px; }
@@ -1083,7 +1118,7 @@
         <div class="sysinst-split-grid">
           <div class="sysinst-col-box common">
             <div class="sysinst-col-head">
-              <span>🏛️ 全プログラム共通ルール（基本デグレード防止）</span>
+              <span>🏛️ 全プログラム共通ルール（基本デグレード防止 ＆ 代表ファイル1箇所集中）</span>
               <button class="btn-primary" id="saveCommonSysInstBtn" style="padding: 3px 10px; font-size: 11px;">💾 共通ルール保存</button>
             </div>
             <textarea class="sysinst-textarea-large" id="commonSystemInstructionArea" placeholder="すべてのAI Studioチャットに注入される基本デグレード防止ルール..."></textarea>
@@ -1177,7 +1212,7 @@
     </div>
   </div>
 
-  <!-- 📖 タブ5: ガイド（詳細完全版マニュアル復元） -->
+  <!-- 📖 タブ5: ガイド（詳細完全版マニュアル） -->
   <div class="tab-content" id="tab5">
     <div class="guide-container">
       
@@ -1188,8 +1223,32 @@
         <p>本拡張機能は、AI Studioのタブをリアルタイムに自動検知し、使用量を可視化しながら、蓄積されたナレッジとGitHubセーブを一体化して開発を力強く支援します。</p>
       </div>
 
+      <!-- 🛡️ 【最重要ルール】デグレード根絶の「代表ファイル1箇所集中」原則 -->
+      <div class="guide-card" style="border-color: #10b981; background: #062319;">
+        <h2 style="color: #34d399;">🛡️ 2. 【絶対原則】デグレードを根絶する「代表ファイル1箇所集中」バージョンルール</h2>
+        <p><strong>なぜ全ファイルの1行目にバージョン番号を書かせてはいけないのか？</strong><br>
+        過去の開発において、「プログラムを修正していないファイルまで、AIが気を利かせて1行目のバージョンだけ書き換えて出力してしまう」という事故が多発しました。これにより無関係なファイルが上書きされ、過去の修正が消える致命的な先祖返り（デグレード）が発生します。</p>
+        
+        <h3>🏛️ Studioマネージャー連携プログラムの厳格標準:</h3>
+        <ul>
+          <li><strong>バージョン番号は、プログラムごとに決められた【代表ファイル1箇所のみ】に記載する。</strong></li>
+          <li><strong>その他のファイル（JavaScript、CSS、HTML等）の先頭には、バージョン番号を絶対に書かない（書かせない）。</strong></li>
+          <li><strong>バージョン更新のためだけのファイル出力は固く禁ずる。</strong> 純粋にロジック・仕様・デザインが変更されたファイルのみを出力・上書きすること。</li>
+        </ul>
+
+        <h3>📁 プログラム種別ごとの【代表ファイル】一覧:</h3>
+        <ol>
+          <li><strong>Chrome拡張機能（01_Studioマネージャー等）</strong> ➜ <strong><code>manifest.json</code></strong> の <code>"version"</code> のみ</li>
+          <li><strong>Webアプリケーション（02〜09: 将棋、オセロ、大富豪、クロちゃん、Thinking、健康管理など）</strong> ➜ <strong><code>index.html</code></strong> （またはメインHTML）の画面表示部（<code>&lt;span id="ver"&gt;vX.X.X&lt;/span&gt;</code> 等）のみ</li>
+          <li><strong>単一バッチ・スクリプト（10番等）</strong> ➜ メインとなる <strong>1ファイル</strong> のみ</li>
+        </ol>
+        <p style="font-size: 11.5px; color: #a7f3d0; margin-top: 4px;">
+          ※GitHubへのセーブ時、全体のChange LogやREADMEの更新履歴はマネージャーが自動で管理・記録します。個別ファイルの中身をバージョン管理で汚す必要はありません。
+        </p>
+      </div>
+
       <div class="guide-card" style="border-color: #f59e0b; background: #1c1917;">
-        <h2 style="color: #fbbf24;">⚠️ 2. 【最重要】30万〜40万トークンの壁と「スマート引越しサイクル」</h2>
+        <h2 style="color: #fbbf24;">⚠️ 3. 30万〜40万トークンの壁と「スマート引越しサイクル」</h2>
         <p><strong>Google AI Studioでは、1つのチャットを長く続けすぎてはいけません。</strong><br>
         チャットが30万トークンを超えて長大化すると、毎回のプロンプト送信で過去の全ログをGoogleのサーバーに再送信して再推論するため、ブラウザの激重化・メモリ圧迫や「An internal error has occurred」の多発につながります。</p>
         <h3>🔄 安全なスマート引越し手順（黄金サイクル）:</h3>
@@ -1204,7 +1263,7 @@
       </div>
 
       <div class="guide-card">
-        <h2>📊 3. IDモニターの2大指標とステータス運用</h2>
+        <h2>📊 4. IDモニターの2大指標とステータス運用</h2>
         <p>IDモニターには、各アカウントの利用状況を正確に把握するための2大指標が備わっています。</p>
         <ul>
           <li><strong>📊 累計トークン</strong>: 本日そのアカウントで消費した総トークン量です（17:00 JSTに自動リセット）。開いた後の増分のみを正確にカウントし、過去チャットを開いたときの誤爆加算は発生しません。万が一のズレは <strong>[✏️]</strong> ボタンで即座に手動補正可能です。</li>
@@ -1216,7 +1275,7 @@
       </div>
 
       <div class="guide-card">
-        <h2>🧠 4. 開発ナレッジ要約とデグレード防止</h2>
+        <h2>🧠 5. 開発ナレッジ要約とデグレード防止</h2>
         <p>AI Studioで要約ボタンを押すと、このタブに「開発ナレッジカード」が蓄積されます。</p>
         <ul>
           <li><strong>⭐ 最新決定版</strong>: 最も新しく要約されたカードが常に最上段に配置され、最新の決定事項として強調されます。</li>
@@ -1226,18 +1285,18 @@
       </div>
 
       <div class="guide-card">
-        <h2>📦 5. プログラム管理・エンハンス計画 ＆ GitHubセーブ</h2>
+        <h2>📦 6. プログラム管理・エンハンス計画 ＆ GitHubセーブ</h2>
         <p>01〜10番の全プログラムのロードマップ管理と、GitHubへの安全な直接プッシュ機能です。</p>
         <ul>
           <li><strong>アイデア計画化</strong>: [＋機能追加]（Minor: +0.1.0）や [＋バグ修正]（Patch: +0.0.1）を押すだけで、次期バージョンが自動採番されて計画キューにストックされます。</li>
           <li><strong>AIプロンプト自動起草 ＆ 着手</strong>: [✨ AIでブレークダウン] を押すと指示プロンプトが自動生成され、[▶ 着手] を押すだけで対象アカウントへのアサインと、予定バージョン固定ルールが付与されたプロンプトのコピーがワンクリックで完了します。</li>
-          <li><strong>💡 気付き・備忘録 (Inbox)</strong>: 使っていて気づいた違和感を殴り書きストックし、[✨ AI仕分け] を押すと重複統合やパッケージ化をAIが自動提案します。</li>
+          <li><strong>💡 気付き・備忘録 (Inbox)</strong>: 使っていて気づいた違和感を殴り書きストックし、[💬 整理・昇格] を押して第1段階の頭の整理と計画昇格を行えます。</li>
           <li><strong>🚀 計画直結セーブ ＆ プリフライト診断</strong>: 計画の [🚀 セーブ] を押して完成ファイルをドロップすると、GitHubの前回コードと自動照合（差分解析）し、Geminiが分かりやすいChange Logを自動起草してリポジトリへ直接プッシュされます。</li>
         </ul>
       </div>
 
       <div class="guide-card">
-        <h2>💬 6. 専任AIコンシェルジュの使い方</h2>
+        <h2>💬 7. 専任AIコンシェルジュの使い方</h2>
         <p>画面右下に常駐するフローティングパネルから、いつでも専任シニアエンジニアに相談できます。</p>
         <ul>
           <li><strong>マウスドラッグ移動</strong>: ヘッダー部分をマウスで掴んで、画面上の好きな位置へ自由に移動できます。</li>
@@ -1263,7 +1322,10 @@
             <input type="text" class="commit-input" id="quickPlanTargetVerInput" style="color: #38bdf8; font-weight: bold;">
           </div>
           <div class="modal-field" style="flex: 1;">
-            <label class="field-label">📌 やりたいこと・キーワード (1行)</label>
+            <div class="field-label">
+              <span>📌 やりたいこと・計画タイトル</span>
+              <span class="char-count-label" id="quickPlanTitleCount">0 / 40文字</span>
+            </div>
             <input type="text" class="commit-input" id="quickPlanTitleInput" placeholder="例: 音声認識が途切れる不具合の解消">
           </div>
         </div>
@@ -1283,7 +1345,7 @@
         <button id="closePriorityModalBtn" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
       </div>
       <div class="modal-body">
-        <div id="priorityLoadingBanner" class="status-banner active">⏳ 現在の全計画とコードを照合し、最も手戻りの少ない着手順を推論中...</div>
+        <div id="priorityLoadingBanner" class="status-banner active">⏳ 現在の全計画とコードを照合し、優先順序・まとめ・小分け提案を推論中...</div>
         <div id="priorityResultContent" class="ai-advice-panel active" style="min-height: 180px; font-size: 12.5px;"></div>
       </div>
       <div class="modal-footer">
@@ -1310,6 +1372,56 @@
         <button class="btn-secondary" id="cancelTriageBtn">キャンセル</button>
         <button class="btn-primary" id="applyTriageBtn" style="display: none; background: #059669; border-color: #10b981;">
           ✅ 選択した仕分け内容を正式計画へ反映する
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 💬 アイデア壁打ち（第1段階の頭の整理 ＆ 計画昇格）モーダル - ワイド＆ゆったり表示対応 -->
+  <div class="modal-overlay#sparringModalOverlay" id="sparringModalOverlay">
+    <div class="modal-card" style="width: 840px;">
+      <div class="modal-header">
+        <h2 id="sparringModalTitle">💬 アイデアの壁打ち（頭の整理 ➜ 正式計画へ昇格）</h2>
+        <button id="closeSparringModalBtn" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;">
+        <div class="modal-field">
+          <label class="field-label">🥚 書き殴ったアイデアの卵（元のメモ）</label>
+          <div class="sparring-source-box" id="sparringSourceNote"></div>
+        </div>
+
+        <div class="sparring-proposal-grid" id="sparringProposalGrid">
+          <div class="modal-field">
+            <div class="field-label">
+              <span>🏷️ 整理された計画タイトル</span>
+              <span class="char-count-label" id="sparringTitleCount">0 / 40文字</span>
+            </div>
+            <input type="text" class="commit-input" id="sparringTitleInput" placeholder="スッキリした計画タイトル">
+          </div>
+          <div class="modal-field">
+            <label class="field-label">🚀 推奨バージョン</label>
+            <input type="text" class="commit-input" id="sparringTargetVerInput" style="color: #38bdf8; font-weight: bold;">
+          </div>
+        </div>
+
+        <div class="modal-field">
+          <label class="field-label">💬 AIとの壁打ち対話（やるべきこと / 今回はやらないことの整理）</label>
+          <div class="sparring-chat-container" id="sparringChatContainer">
+            <div class="sparring-bubble ai">
+              ⏳ アイデアを読み解き、タイトル命名とスコープ（やる/見送る）を整理しています...
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input type="text" class="commit-input" id="sparringReplyInput" placeholder="AIへ調整の指示や質問（例: BはやめてAだけにしたい）... (Enterで送信)" style="flex: 1;">
+          <button type="button" class="btn-primary" id="sparringReplySendBtn" style="padding: 7px 14px; font-size: 12px;">返信</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="cancelSparringBtn">キャンセル（メモは維持）</button>
+        <button class="btn-primary" id="promoteToPlanBtn" style="background: #059669; border-color: #10b981;">
+          🚀 この内容でエンハンス計画へ昇格！
         </button>
       </div>
     </div>
