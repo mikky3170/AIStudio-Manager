@@ -1,4 +1,4 @@
-// [v1.3.0 作業版 Rev.1] 増分(delta)に対する20万tk異常値ヒューズ搭載＆純粋JST計算統一による誤爆加算完全遮断
+// [v1.3.0 作業版 Rev.2] ナレッジ要約保存時のベースバージョン確定セーブ履歴(saveHistory[0])厳格同期
 
 chrome.action.onClicked.addListener(() => {
   chrome.tabs.create({ url: chrome.runtime.getURL("display.html") });
@@ -257,7 +257,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (currentProg.id !== "prog_unassigned") {
         const hasHistory = currentProg.saveHistory && currentProg.saveHistory.length > 0;
         if (hasHistory) {
-          autoBaseVersion = currentProg.version || "v1.3.0";
+          // 🛡️ B案：未セーブの計画中Verではなく、GitHubセーブ履歴の確定最新（saveHistory[0].version）を絶対のベースとする
+          autoBaseVersion = currentProg.saveHistory[0].version || "v1.0.0";
         } else {
           autoBaseVersion = "🌱 初回構築中";
         }
