@@ -1,4 +1,4 @@
-// [v1.2.0 作業版 Rev.1] New Chat昇格時の初速トークン完全保護＆URL正規化による正確な差分加算
+// [v1.3.0 作業版 Rev.1] 増分(delta)に対する20万tk異常値ヒューズ搭載＆純粋JST計算統一による誤爆加算完全遮断
 
 chrome.action.onClicked.addListener(() => {
   chrome.tabs.create({ url: chrome.runtime.getURL("display.html") });
@@ -29,30 +29,34 @@ function getDefaultAccounts() {
   return accounts;
 }
 
-// 17時基準のJST業務日付キー（例: 5/19 16:59 ➜ "2025-05-18", 5/19 17:01 ➜ "2025-05-19"）
-function getTodayResetDateKey() {
-  const now = new Date();
-  const jstNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
-  const target = new Date(jstNow.getTime() - 17 * 60 * 60 * 1000);
-  const y = target.getFullYear();
-  const m = String(target.getMonth() + 1).padStart(2, '0');
-  const d = String(target.getDate()).padStart(2, '0');
+// UTCタイムスタンプから純粋なJST日付文字列 (YYYY-MM-DD) を1本で決定論的に算出
+function getPureJstDateString(epochMs) {
+  const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  const jstDate = new Date(epochMs + JST_OFFSET_MS);
+  const y = jstDate.getUTCFullYear();
+  const m = String(jstDate.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(jstDate.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+// 17時基準のJST業務日付キー (純粋ミリ秒計算により、タイムゾーン二重適用のバグを完全根絶)
+function getTodayResetDateKey() {
+  const nowMs = Date.now();
+  const targetMs = nowMs - (17 * 60 * 60 * 1000);
+  return getPureJstDateString(targetMs);
 }
 
 // 17時日次リセット判定（17:00跨ぎの誤爆加算を完全防止 ＆ ベースライン辞書は永続維持）
 function checkDailyReset() {
   chrome.storage.local.get(["lastResetDate", "accounts", "dailyProgUsage"], (res) => {
-    const now = new Date();
-    const jstNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
-    const resetDateKey = new Date(jstNow.getTime() - 17 * 60 * 60 * 1000).toDateString();
+    const todayKey = getTodayResetDateKey();
 
     if (!res.lastResetDate) {
-      chrome.storage.local.set({ lastResetDate: resetDateKey });
+      chrome.storage.local.set({ lastResetDate: todayKey });
       return;
     }
 
-    if (res.lastResetDate !== resetDateKey) {
+    if (res.lastResetDate !== todayKey) {
       const currentAccounts = res.accounts || getDefaultAccounts();
 
       for (let i = 1; i <= 4; i++) {
@@ -75,7 +79,7 @@ function checkDailyReset() {
 
       chrome.storage.local.set({
         accounts: currentAccounts,
-        lastResetDate: resetDateKey
+        lastResetDate: todayKey
       });
     }
   });
@@ -96,7 +100,7 @@ function calculateDailyMeter(dailyTokens) {
   return 80;
 }
 
-// メッセージハンドラ（誤爆加算ゼロの堅牢差分検知 ＆ アカウント逆引き ＆ トークン完全同期）
+// メッセージハンドラ（誤爆加算ゼロの堅牢差分検知 ＆ アカウント逆引き ＆ 異常値ヒューズ保護）
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 🔍 タブIDからアカウントIDを正確に逆引き（URLに /u/X がない場合のアカウント誤認を完全防止）
   if (message.type === "RESOLVE_ACCOUNT_ID") {
@@ -123,7 +127,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const { accountId, tokens, url } = message.data;
     if (accountId < 1 || accountId > 4) return;
 
-    // URLの厳格正規化（クエリパラメータや末尾スラッシュの差異による誤認識を物理遮断）
+    // URLの厳格正規化（クエリ・ハッシュ・末尾スラッシュの差異による別URL誤認を物理遮断）
     const cleanUrl = (url || "").split("?")[0].split("#")[0].replace(/\/+$/, "");
 
     chrome.storage.local.get(["accounts", "dailyProgUsage"], (res) => {
@@ -147,7 +151,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         );
 
         if (isPromotedFromNewChat) {
-          // 新規チャットから昇格した場合、ベースラインを0（または前回の端数）として引き継ぎ、全額を正確に加算
           const previousBase = acc.urlBaselines[acc.lastChatUrl] || 0;
           acc.urlBaselines[cleanUrl] = previousBase;
           delete acc.urlBaselines[acc.lastChatUrl];
@@ -155,20 +158,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         // 🛡️ 初めて検知されたURLの場合の判定
         if (acc.urlBaselines[cleanUrl] === undefined) {
-          // 過去ログを一覧から開いた場合：その時点のトークンをベースラインに登録（誤爆加算ゼロを完全死守）
+          // 過去チャットを一覧から開いた場合：その時点のトークンをベースラインに登録（誤爆加算ゼロを完全死守）
           acc.urlBaselines[cleanUrl] = tokens;
         } else {
           const prevToken = acc.urlBaselines[cleanUrl];
 
-          // 会話を進めて増えた分だけを漏れなく100%正確に累計加算
           if (tokens > prevToken) {
             const delta = tokens - prevToken;
-            acc.tokens = (acc.tokens || 0) + delta;
-            acc.urlBaselines[cleanUrl] = tokens;
 
-            if (!dailyProgUsage[todayKey]) dailyProgUsage[todayKey] = {};
-            const targetProgId = acc.currentProgramId || "prog_unassigned";
-            dailyProgUsage[todayKey][targetProgId] = (dailyProgUsage[todayKey][targetProgId] || 0) + delta;
+            // 🛡️ 【最重要防壁：異常値ヒューズ】
+            // 1回の検知スキャン（3秒間）で20万トークンを超える異常な急増が発生した場合、
+            // それは会話による増加ではなく「チャットの切り替えや読み込みのズレ」と断定し、加算を物理遮断する！
+            const MAX_REALISTIC_DELTA_PER_TURN = 200000;
+
+            if (delta <= MAX_REALISTIC_DELTA_PER_TURN) {
+              acc.tokens = (acc.tokens || 0) + delta;
+              acc.urlBaselines[cleanUrl] = tokens;
+
+              if (!dailyProgUsage[todayKey]) dailyProgUsage[todayKey] = {};
+              const targetProgId = acc.currentProgramId || "prog_unassigned";
+              dailyProgUsage[todayKey][targetProgId] = (dailyProgUsage[todayKey][targetProgId] || 0) + delta;
+            } else {
+              console.warn(`[ヒューズ作動] 異常なトークン急増を検知 (delta: ${delta} tk)。誤爆防止のため加算を遮断し、ベースラインのみを同期しました。`);
+              acc.urlBaselines[cleanUrl] = tokens;
+            }
 
           } else if (tokens < prevToken) {
             // プロンプト編集や一部巻き戻しでトークンが減った場合のベースライン補正
@@ -186,7 +199,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           acc.meterLevel = calculateDailyMeter(acc.tokens);
         }
       } else if (cleanUrl) {
-        // トークンがまだ0の新規チャットの場合も、URL遷移元として確実に追跡
         acc.lastChatUrl = cleanUrl;
       }
 
@@ -245,7 +257,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (currentProg.id !== "prog_unassigned") {
         const hasHistory = currentProg.saveHistory && currentProg.saveHistory.length > 0;
         if (hasHistory) {
-          autoBaseVersion = currentProg.version || "v1.2.0";
+          autoBaseVersion = currentProg.version || "v1.3.0";
         } else {
           autoBaseVersion = "🌱 初回構築中";
         }
