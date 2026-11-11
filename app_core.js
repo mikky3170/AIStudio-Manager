@@ -1,4 +1,4 @@
-// [v1.4.0 作業版 Rev.3] 代表ファイル1箇所集中ルールへのSystemInstruction改訂およびプリフライト検査のスマート化
+// [v1.4.1 作業版 Rev.1] 欠落していたrunAiTriage関数の実装およびAI一括仕分け機能の復旧
 const APP_DEFAULT_VERSION = "v1.3.0";
 
 function createInitialAccounts() {
@@ -703,6 +703,106 @@ ${userReply}
   }
 }
 
+// === ✨ AIアイデア交通整理・一括仕分け（Inboxメモの自動トリアージ） ===
+async function runAiTriage(prog, notes) {
+  if (!apiConfig.geminiApiKey) {
+    throw new Error("Gemini APIキーが設定されていません。「⚙️ 設定」タブでAPIキーを設定してください。");
+  }
+
+  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
+
+  const currentVer = prog.version || "v1.0.0";
+  const activePlans = (prog.enhancePlans || []).filter(p => p.status !== "done");
+
+  const notesListText = notes.map((n, i) => `[メモ${i + 1}] ID:${n.id} 内容: ${n.text}`).join("\n");
+  const plansListText = activePlans.length > 0
+    ? activePlans.map(p => `[既存計画 ID:${p.id}] Ver:${p.targetVer} タイトル:${p.title} 要件:${p.prompt || '未設定'}`).join("\n")
+    : "（現在進行中のエンハンス計画はありません）";
+
+  const prompt = `あなたはプロのシニアプロダクトマネージャーです。
+開発者が思いつきで放り込んだ複数の【アイデアの卵・メモ】を分析し、
+① 既存のエンハンス計画に追加すべきもの（マージ）
+② まとめて新しい機能追加やバグ修正として計画化すべきもの（新規作成）
+に分類・交通整理してください。
+
+【対象プログラム】: ${prog.name} (稼働Ver: ${currentVer})
+【固有設計方針】: ${prog.customInstruction || 'なし'}
+
+【ストックされているメモ一覧】
+${notesListText}
+
+【現在登録されているエンハンス計画一覧】
+${plansListText}
+
+【厳格な指示】
+以下のJSONフォーマットのみをプレーンテキストで出力してください（Markdownの\`\`\`json記号は含めないでください）。
+
+{
+  "suggestions": [
+    {
+      "action": "merge",
+      "noteId": "対象のメモID",
+      "targetPlanId": "合流先の既存計画ID",
+      "reason": "合流を推奨する明確な理由（1行）",
+      "appendToPlan": "既存計画のプロンプトに追記すべき箇条書き要件"
+    },
+    {
+      "action": "create",
+      "noteIds": ["まとめ対象のメモID1", "メモID2"],
+      "verType": "minor" または "patch",
+      "targetVer": "推奨バージョン（例: v1.1.0 または v1.0.1）",
+      "title": "40文字以内のスッキリした新計画タイトル",
+      "reason": "新規計画化を推奨する理由",
+      "promptDraft": "■ 実装の目的:\\n...\\n\\n■ 具体的な実装要件:\\n・...",
+      "costEstimate": "工数小" または "工数中"
+    }
+  ]
+}
+`;
+
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.2 }
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  }
+
+  const data = await res.json();
+  let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+  rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+  try {
+    return JSON.parse(rawText);
+  } catch (e) {
+    // 安全フォールバック
+    const firstNote = notes[0];
+    return {
+      suggestions: [
+        {
+          action: "create",
+          noteIds: [firstNote.id],
+          verType: "minor",
+          targetVer: calculateNextVersion(currentVer, "minor"),
+          title: firstNote.text.substring(0, 30),
+          reason: "単独の機能改善として新規計画化を推奨します。",
+          promptDraft: `■ 実装の目的:\n${firstNote.text.substring(0, 30)}\n\n■ 具体的な実装要件:\n・${firstNote.text}`,
+          costEstimate: "工数小"
+        }
+      ]
+    };
+  }
+}
+
 // === ✨ AIでブレークダウン＆プロンプト自動起草（01〜10番完全統一・自然言語要件化） ===
 async function generateBreakdownPromptWithAI(planTitle, targetVer = "次期版") {
   const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
@@ -997,13 +1097,13 @@ function openSaveModal(prog, plan = null) {
 
   const isInitial = (!prog.saveHistory || prog.saveHistory.length === 0);
 
-  let defaultVersion = "v1.4.0";
+  let defaultVersion = "v1.4.1";
   if (isInitial) {
     defaultVersion = "v1.0.0";
   } else if (plan) {
     defaultVersion = plan.targetVer || calculateNextVersion(prog.version || "v1.0.0", plan.verType || "minor");
   } else {
-    defaultVersion = calculateNextVersion(prog.version || "v1.0.0", "minor");
+    defaultVersion = calculateNextVersion(prog.version || "v1.0.0", "patch");
   }
 
   const verLabel = document.getElementById("modalVersionLabel");
@@ -1088,7 +1188,7 @@ async function analyzeDiffAndGenerateSummary() {
   banner.innerText = `⏳ 前回コードを確認し、${apiConfig.geminiModelName || 'gemini-3.5-flash-lite'} で差分を要約中...`;
 
   const repo = document.getElementById("modalRepoInput").value.trim();
-  const relVersion = document.getElementById("modalReleaseVersionInput").value.trim() || "v1.4.0";
+  const relVersion = document.getElementById("modalReleaseVersionInput").value.trim() || "v1.4.1";
 
   if (!apiConfig.githubToken || !repo) {
     banner.innerText = "⚠️ 上の入力欄に「対象リポジトリ名」、設定タブに「GitHubトークン」を入力してください。";
@@ -1261,7 +1361,7 @@ ${diffText || "初回登録・ベースファイル一式"}
 
 async function executeGitHubPush() {
   const repoInputVal = document.getElementById("modalRepoInput").value.trim();
-  const relVersion = document.getElementById("modalReleaseVersionInput").value.trim() || "v1.4.0";
+  const relVersion = document.getElementById("modalReleaseVersionInput").value.trim() || "v1.4.1";
   const commitMsg = document.getElementById("commitMessageInput").value.trim();
   const summary = document.getElementById("changeSummaryArea").value.trim();
 
