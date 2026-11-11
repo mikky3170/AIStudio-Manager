@@ -1,4 +1,4 @@
-// [v1.3.0 作業版 Rev.2] ナレッジ要約保存時のベースバージョン確定セーブ履歴(saveHistory[0])厳格同期
+// [v1.4.0 作業版 Rev.1] ナレッジ要約保存時のベースバージョン確定セーブ履歴(saveHistory[0])厳格同期
 
 chrome.action.onClicked.addListener(() => {
   chrome.tabs.create({ url: chrome.runtime.getURL("display.html") });
