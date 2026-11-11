@@ -1,4 +1,4 @@
-// [v1.3.0 作業版 Rev.2] GitHubセーブ前は「🧪 動作確認中 (未セーブ)」バッジ＆Change Log前回実績の正確連動UI
+// [v1.4.0 作業版 Rev.2] 着手プロンプトの「代表ファイル1箇所集中」ルール化および壁打ち・逆質問トリガー自動合成
 
 // === タブ1: IDモニター ＆ トークン管理 ===
 function setupCards() {
@@ -289,7 +289,6 @@ function updateCardValues() {
             idProgVerBadge.className = "id-prog-ver-badge uncommitted";
             idProgVerBadge.innerText = "🌱 初回構築中";
           } else {
-            // 前回の正式セーブ実績をベースバージョンとして表示
             const baseSavedVer = (assignedProg.saveHistory && assignedProg.saveHistory[0]) ? assignedProg.saveHistory[0].version : assignedProg.version;
             idProgVerBadge.className = "id-prog-ver-badge";
             idProgVerBadge.innerText = `🟢 ベース: ${baseSavedVer || 'v1.0.0'}`;
@@ -345,7 +344,7 @@ function updateCardValues() {
   }
 }
 
-// === タブ2: プログラム管理・エンハンス (ステータス連動バッジ ＆ 純粋描画) ===
+// === タブ2: プログラム管理・エンハンス ===
 function renderProgramDashboard() {
   const chartList = document.getElementById("chartList");
   const progCardList = document.getElementById("progCardList");
@@ -373,13 +372,9 @@ function renderProgramDashboard() {
     const repoDisplayName = prog.githubRepo || "未設定 (セーブ時に入力可能)";
     const isWebPublish = !!prog.isWebPublish;
 
-    // 🏷️ 直近にGitHubへセーブされた本物の実績バージョン
     const latestSavedVer = (history.length > 0 && history[0].version) ? history[0].version : null;
-
-    // 🧪 動作確認中（未セーブ）判定：手元でバージョンが上がっているが、まだGitHubに未セーブの状態
     const isTesting = (!isInitialUncommitted && latestSavedVer && prog.version && prog.version !== latestSavedVer);
 
-    // バッジHTMLの生成（3段階：初回登録待ち / 動作確認中(未セーブ) / 正式稼働版）
     let versionBadgeHtml = "";
     if (isInitialUncommitted) {
       versionBadgeHtml = `<span class="prog-version-badge uncommitted">🌱 初回登録待ち</span>`;
@@ -432,7 +427,9 @@ function renderProgramDashboard() {
           const tagType = plan.verType === "patch" ? "patch" : "minor";
           const tagText = plan.targetVer || (tagType === "patch" ? "BugFix" : "Enhance");
           const isOpen = openedPlanIds.has(plan.id);
+          const titleCharCount = (plan.title || "").length;
 
+          // 🚀 時系列順「編集・着手」➜「セーブ」➜「削除」
           plansHtml += `
             <div class="enhance-item-wrapper ${isOpen ? 'open' : ''}" id="planWrapper-${plan.id}">
               <div class="enhance-item-row" data-plan-id="${plan.id}" data-prog-id="${prog.id}">
@@ -442,10 +439,10 @@ function renderProgramDashboard() {
                   ${plan.prompt ? `<span class="enhance-badge-prompt">🤖 プロンプト済</span>` : ''}
                 </div>
                 <div class="enhance-item-actions">
+                  <button type="button" class="toggle-expand-btn" data-plan-id="${plan.id}">${isOpen ? '▲ 閉じる' : '▼ 編集・着手'}</button>
                   <button type="button" class="btn-plan-save-row" data-prog-id="${prog.id}" data-plan-id="${plan.id}" title="完成したコードをGitHubへセーブし、この計画を完了にします">
                     🚀 セーブ
                   </button>
-                  <button type="button" class="toggle-expand-btn" data-plan-id="${plan.id}">${isOpen ? '▲ 閉じる' : '▼ 編集・着手'}</button>
                   <button type="button" class="del-plan-btn" data-prog-id="${prog.id}" data-plan-id="${plan.id}" title="計画を削除">✕</button>
                 </div>
               </div>
@@ -457,7 +454,10 @@ function renderProgramDashboard() {
                     <input type="text" class="inline-input inline-ver-input" data-plan-id="${plan.id}" value="${escapeHtml(plan.targetVer || 'v1.0.0')}" style="width: 100%; color: #38bdf8; font-weight: bold;">
                   </div>
                   <div style="flex: 1;">
-                    <label class="field-label">計画タイトル・修正要約</label>
+                    <div class="field-label">
+                      <span>計画タイトル・修正要約</span>
+                      <span class="char-count-label inline-title-count" data-plan-id="${plan.id}">${titleCharCount} / 40文字</span>
+                    </div>
                     <input type="text" class="inline-input inline-title-input" data-plan-id="${plan.id}" value="${escapeHtml(plan.title || '')}" style="width: 100%;">
                   </div>
                 </div>
@@ -466,13 +466,11 @@ function renderProgramDashboard() {
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
                     <label class="field-label" style="margin: 0;">🤖 AI Studio用 指示プロンプト (着手時に自動コピー)</label>
                     <button type="button" class="btn-secondary auto-prompt-inline-btn" data-prog-id="${prog.id}" data-plan-id="${plan.id}" style="padding: 2px 9px; font-size: 11px; color: #34d399; border-color: #059669; background: #064e3b;">
-                      ✨ AIでブレークダウン＆プロンプト自動起草
+                      ✨ AIで要件箇条書きを自動起草
                     </button>
                   </div>
-                  <textarea class="inline-textarea inline-prompt-area" data-plan-id="${plan.id}" placeholder="AI Studioにそのまま貼り付けられる指示文。上の「✨ AIでブレークダウン」を押すと自動生成されます。">${escapeHtml(plan.prompt || '')}</textarea>
+                  <textarea class="inline-textarea inline-prompt-area" data-plan-id="${plan.id}" placeholder="AI Studioにそのまま貼り付けられる要件指示文。上のボタンを押すと自然言語で分かりやすく自動整理されます。">${escapeHtml(plan.prompt || '')}</textarea>
                 </div>
-
-                ${plan.aiAdvice ? `<div class="ai-advice-panel" style="margin-top: 2px;">${escapeHtml(plan.aiAdvice)}</div>` : ''}
 
                 <div class="inline-actions-row">
                   <button type="button" class="btn-secondary manual-done-inline-btn" data-prog-id="${prog.id}" data-plan-id="${plan.id}" style="font-size: 11px; padding: 4px 8px; color: #94a3b8;">
@@ -492,13 +490,18 @@ function renderProgramDashboard() {
       const isInboxOpen = openedInboxProgIds.has(prog.id);
       let inboxNotesHtml = "";
       if (notes.length === 0) {
-        inboxNotesHtml = `<div style="font-size: 11px; color: #64748b; font-style: italic; padding: 4px 0;">まだメモはありません。使っていて気づいた点や違和感を上の窓にサッと殴り書きできます。</div>`;
+        inboxNotesHtml = `<div style="font-size: 11px; color: #64748b; font-style: italic; padding: 4px 0;">まだアイデアの卵はありません。思いついたキーワードや懸念を上の窓に殴り書きしてストックできます。</div>`;
       } else {
         inboxNotesHtml = notes.map(n => `
           <div class="inbox-note-item">
             <span class="inbox-note-text">${escapeHtml(n.text)}</span>
-            <span class="inbox-note-date">${escapeHtml(n.dateStr || '')}</span>
-            <button type="button" class="btn-del-inbox-note" data-prog-id="${prog.id}" data-note-id="${n.id}" title="メモを削除">✕</button>
+            <div class="inbox-note-actions">
+              <span class="inbox-note-date">${escapeHtml(n.dateStr || '')}</span>
+              <button type="button" class="btn-note-sparring" data-prog-id="${prog.id}" data-note-id="${n.id}" title="このアイデアについてAIと頭の整理（タイトル化と要件箇条書き）をして正式計画へ昇格させます">
+                💬 整理・昇格
+              </button>
+              <button type="button" class="btn-del-inbox-note" data-prog-id="${prog.id}" data-note-id="${n.id}" title="メモを削除">✕</button>
+            </div>
           </div>
         `).join("");
       }
@@ -506,7 +509,6 @@ function renderProgramDashboard() {
       const latest = history[0];
       const olderList = history.slice(1);
 
-      // Change Logの見出し（未セーブ時は「前回実績: vX.X.X」、セーブ後は「最新稼働版: vX.X.X」と完璧に整合）
       const logHeaderLabel = isTesting
         ? `前回実績: ${escapeHtml(latestSavedVer)}`
         : `最新稼働版: ${escapeHtml(latest.version || prog.version)}`;
@@ -526,7 +528,7 @@ function renderProgramDashboard() {
 
       if (olderList.length > 0) {
         historyHtml += `
-          <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+          <div style="display: flex; justify-content: space-between; margin-top: 4px;">
             <button class="history-accordion-toggle" data-prog-id="${prog.id}">
               ▶ 過去のセーブ履歴を展開 (全 ${olderList.length} 件)
             </button>
@@ -562,10 +564,10 @@ function renderProgramDashboard() {
         <div class="inbox-section ${isInboxOpen ? 'open' : ''}" id="inboxSection-${prog.id}">
           <div class="inbox-head-accordion" data-prog-id="${prog.id}">
             <div class="inbox-head-title">
-              <span>💡 気付き・備忘録メモ (Inbox / ストック: ${notes.length}件)</span>
+              <span>🥚 アイデアの卵・備忘録メモ (Inbox / ストック: ${notes.length}件)</span>
               ${notes.length > 0 && isInboxOpen ? `
                 <button type="button" class="btn-inbox-triage" data-prog-id="${prog.id}">
-                  ✨ AI仕分け・整理
+                  ✨ AI一括仕分け
                 </button>
               ` : ''}
             </div>
@@ -575,9 +577,12 @@ function renderProgramDashboard() {
           </div>
           
           <div class="inbox-body-collapsible">
-            <div class="inbox-input-row">
-              <input type="text" class="inbox-input" data-prog-id="${prog.id}" placeholder="使っていて気づいた点や違和感を殴り書き... (Enterで即追加)">
-              <button type="button" class="btn-inbox-add" data-prog-id="${prog.id}">＋ メモ追加</button>
+            <div class="inbox-input-container">
+              <textarea class="inbox-textarea" data-prog-id="${prog.id}" placeholder="「ここがこうなって…でもこれが心配…」など、キーワードや懸念を2〜3行だらだら殴り書きできます。(Ctrl+Enterで即座ストック)"></textarea>
+              <div class="inbox-submit-bar">
+                <span class="inbox-hint">💡 まずは忘れずにバッと放り込んでおき、整理・昇格は後から余裕のある時に行えます。</span>
+                <button type="button" class="btn-inbox-add" data-prog-id="${prog.id}">＋ メモ追加</button>
+              </div>
             </div>
             <div class="inbox-notes-list">
               ${inboxNotesHtml}
@@ -596,7 +601,7 @@ function renderProgramDashboard() {
         </div>
 
         <div class="prog-card-actions">
-          <span style="font-size: 10.5px; color: #475569;">※開発は上の計画から [🚀 セーブ] を推奨</span>
+          <span style="font-size: 10.5px; color: #475569;">※開発は上の計画から [▶ 編集・着手] を推奨</span>
           <button type="button" class="emergency-push-link emergency-save-btn" data-prog-id="${prog.id}">
             ...その他: 計画外の緊急セーブ
           </button>
@@ -777,17 +782,29 @@ function attachInboxEvents() {
   document.querySelectorAll(".btn-inbox-add").forEach(btn => {
     btn.onclick = () => {
       const pid = btn.dataset.progId;
-      const input = document.querySelector(`.inbox-input[data-prog-id="${pid}"]`);
-      addInboxNote(pid, input?.value);
+      const textarea = document.querySelector(`.inbox-textarea[data-prog-id="${pid}"]`);
+      addInboxNote(pid, textarea?.value);
     };
   });
 
-  document.querySelectorAll(".inbox-input").forEach(input => {
-    input.onkeydown = (e) => {
-      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+  document.querySelectorAll(".inbox-textarea").forEach(area => {
+    area.onkeydown = (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        const pid = input.dataset.progId;
-        addInboxNote(pid, input.value);
+        const pid = area.dataset.progId;
+        addInboxNote(pid, area.value);
+      }
+    };
+  });
+
+  document.querySelectorAll(".btn-note-sparring").forEach(btn => {
+    btn.onclick = () => {
+      const pid = btn.dataset.progId;
+      const nid = btn.dataset.noteId;
+      const prog = programsData.find(p => p.id === pid);
+      const note = (prog?.inboxNotes || []).find(n => n.id === nid);
+      if (prog && note) {
+        openSparringModal(prog, note);
       }
     };
   });
@@ -882,6 +899,18 @@ function attachEnhanceEvents() {
     };
   });
 
+  document.querySelectorAll(".inline-title-input").forEach(input => {
+    input.oninput = (e) => {
+      const planId = e.target.dataset.planId;
+      const countEl = document.querySelector(`.inline-title-count[data-plan-id="${planId}"]`);
+      if (countEl) {
+        const len = e.target.value.length;
+        countEl.innerText = `${len} / 40文字`;
+        countEl.className = "char-count-label" + (len > 50 ? " danger" : (len > 40 ? " warn" : ""));
+      }
+    };
+  });
+
   document.querySelectorAll(".auto-prompt-inline-btn").forEach(btn => {
     btn.onclick = async (e) => {
       e.stopPropagation();
@@ -913,7 +942,7 @@ function attachEnhanceEvents() {
         const plan = (prog?.enhancePlans || []).find(p => p.id === planId);
         if (plan) {
           plan.prompt = aiResult.prompt;
-          plan.aiAdvice = aiResult.advice;
+          plan.aiAdvice = "";
           chrome.storage.local.set({ programs: programsData });
           renderProgramDashboard();
         }
@@ -921,7 +950,7 @@ function attachEnhanceEvents() {
         alert(`⚠️ AI起草エラー: ${err.message}`);
       } finally {
         btn.disabled = false;
-        btn.innerText = "✨ AIでブレークダウン＆プロンプト自動起草";
+        btn.innerText = "✨ AIで要件箇条書きを自動起草";
       }
     };
   });
@@ -1019,10 +1048,201 @@ function openQuickPlanModal(prog, verType = "minor") {
   const typeLabel = verType === "patch" ? "🐛 バグ修正 (Patch)" : "🚀 機能追加 (Minor)";
   document.getElementById("quickPlanModalTitle").innerText = `【${prog.name}】に計画を追加 (${typeLabel})`;
   document.getElementById("quickPlanTargetVerInput").value = nextVer;
-  document.getElementById("quickPlanTitleInput").value = "";
+  
+  const titleInput = document.getElementById("quickPlanTitleInput");
+  titleInput.value = "";
+  updateQuickPlanTitleCount();
 
   document.getElementById("quickPlanModalOverlay").classList.add("active");
-  document.getElementById("quickPlanTitleInput").focus();
+  titleInput.focus();
+}
+
+function updateQuickPlanTitleCount() {
+  const input = document.getElementById("quickPlanTitleInput");
+  const countEl = document.getElementById("quickPlanTitleCount");
+  if (input && countEl) {
+    const len = input.value.length;
+    countEl.innerText = `${len} / 40文字`;
+    countEl.className = "char-count-label" + (len > 50 ? " danger" : (len > 40 ? " warn" : ""));
+  }
+}
+
+// === 💬 アイデア壁打ち（第1段階の頭の整理 ＆ 計画昇格）制御 ===
+let currentSparringProg = null;
+let currentSparringNote = null;
+let sparringChatHistory = [];
+
+async function openSparringModal(prog, note) {
+  currentSparringProg = prog;
+  currentSparringNote = note;
+  sparringChatHistory = [];
+
+  const overlay = document.getElementById("sparringModalOverlay");
+  const sourceBox = document.getElementById("sparringSourceNote");
+  const titleInput = document.getElementById("sparringTitleInput");
+  const verInput = document.getElementById("sparringTargetVerInput");
+  const chatContainer = document.getElementById("sparringChatContainer");
+  const replyInput = document.getElementById("sparringReplyInput");
+
+  sourceBox.innerText = note.text;
+  titleInput.value = "要約中...";
+  verInput.value = calculateNextVersion(prog.version || "v1.0.0", "minor");
+  updateSparringTitleCount();
+  replyInput.value = "";
+  chatContainer.innerHTML = `<div class="sparring-bubble ai">⏳ アイデアを読み解き、タイトル命名と要件の箇条書きを整理しています...</div>`;
+
+  overlay.classList.add("active");
+
+  if (!apiConfig.geminiApiKey) {
+    chatContainer.innerHTML = `<div class="sparring-bubble ai">⚠️ Gemini APIキーが設定されていません。「⚙️ 設定」タブでAPIキーを設定すると、AIがタイトル命名と要件整理を自動で行います。</div>`;
+    titleInput.value = note.text.substring(0, 30);
+    updateSparringTitleCount();
+    return;
+  }
+
+  try {
+    const aiResult = await runInitialSparring(prog, note.text);
+    titleInput.value = aiResult.suggestedTitle;
+    verInput.value = aiResult.targetVer;
+    updateSparringTitleCount();
+
+    sparringChatHistory.push({ role: "model", text: aiResult.aiMessage });
+    chatContainer.innerHTML = `<div class="sparring-bubble ai">${escapeHtml(aiResult.aiMessage).replace(/\n/g, '<br>')}</div>`;
+  } catch (err) {
+    chatContainer.innerHTML = `<div class="sparring-bubble ai" style="color: #ef4444;">⚠️ 壁打ち開始エラー: ${err.message}</div>`;
+    titleInput.value = note.text.substring(0, 30);
+    updateSparringTitleCount();
+  }
+}
+
+function updateSparringTitleCount() {
+  const input = document.getElementById("sparringTitleInput");
+  const countEl = document.getElementById("sparringTitleCount");
+  if (input && countEl) {
+    const len = input.value.length;
+    countEl.innerText = `${len} / 40文字`;
+    countEl.className = "char-count-label" + (len > 50 ? " danger" : (len > 40 ? " warn" : ""));
+  }
+}
+
+async function handleSparringReply() {
+  const replyInput = document.getElementById("sparringReplyInput");
+  const userText = replyInput.value.trim();
+  if (!userText || !currentSparringProg || !currentSparringNote) return;
+
+  const chatContainer = document.getElementById("sparringChatContainer");
+  const userBubble = document.createElement("div");
+  userBubble.className = "sparring-bubble user";
+  userBubble.innerText = userText;
+  chatContainer.appendChild(userBubble);
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+
+  replyInput.value = "";
+  sparringChatHistory.push({ role: "user", text: userText });
+
+  const loadingBubble = document.createElement("div");
+  loadingBubble.className = "sparring-bubble ai";
+  loadingBubble.innerText = "⏳ 考え中...";
+  chatContainer.appendChild(loadingBubble);
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+
+  try {
+    const aiReply = await continueSparringChat(currentSparringProg, userText);
+    loadingBubble.innerHTML = escapeHtml(aiReply.aiMessage).replace(/\n/g, '<br>');
+    sparringChatHistory.push({ role: "model", text: aiReply.aiMessage });
+
+    if (aiReply.updatedTitle) {
+      document.getElementById("sparringTitleInput").value = aiReply.updatedTitle;
+      updateSparringTitleCount();
+    }
+    if (aiReply.updatedVer) {
+      document.getElementById("sparringTargetVerInput").value = aiReply.updatedVer;
+    }
+  } catch (err) {
+    loadingBubble.innerText = `⚠️ エラー: ${err.message}`;
+  }
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+function initSparringModalHandlers() {
+  const overlay = document.getElementById("sparringModalOverlay");
+  const closeBtn = document.getElementById("closeSparringModalBtn");
+  const cancelBtn = document.getElementById("cancelSparringBtn");
+  const promoteBtn = document.getElementById("promoteToPlanBtn");
+  const replyBtn = document.getElementById("sparringReplySendBtn");
+  const replyInput = document.getElementById("sparringReplyInput");
+  const titleInput = document.getElementById("sparringTitleInput");
+
+  const closeModal = () => {
+    overlay.classList.remove("active");
+    currentSparringProg = null;
+    currentSparringNote = null;
+    sparringChatHistory = [];
+  };
+
+  closeBtn.onclick = closeModal;
+  cancelBtn.onclick = closeModal;
+
+  replyBtn.onclick = handleSparringReply;
+  replyInput.onkeydown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      handleSparringReply();
+    }
+  };
+
+  if (titleInput) {
+    titleInput.oninput = updateSparringTitleCount;
+  }
+
+  const quickTitleInput = document.getElementById("quickPlanTitleInput");
+  if (quickTitleInput) {
+    quickTitleInput.oninput = updateQuickPlanTitleCount;
+  }
+
+  promoteBtn.onclick = () => {
+    if (!currentSparringProg || !currentSparringNote) {
+      closeModal();
+      return;
+    }
+
+    const targetProg = programsData.find(p => p.id === currentSparringProg.id);
+    if (!targetProg) {
+      closeModal();
+      return;
+    }
+
+    const finalTitle = document.getElementById("sparringTitleInput").value.trim() || currentSparringNote.text.substring(0, 30);
+    const finalVer = document.getElementById("sparringTargetVerInput").value.trim() || "v1.0.0";
+
+    const cleanPromptDraft = `■ 実装の目的:
+${finalTitle}
+
+■ 具体的な実装要件:
+・${currentSparringNote.text.replace(/\n+/g, '\n・')}`;
+
+    if (!targetProg.enhancePlans) targetProg.enhancePlans = [];
+    targetProg.enhancePlans.unshift({
+      id: `plan_${Date.now()}`,
+      targetVer: finalVer,
+      verType: finalVer.endsWith(".0") ? "minor" : "patch",
+      title: finalTitle,
+      prompt: cleanPromptDraft,
+      aiAdvice: "",
+      status: "todo",
+      createdAt: Date.now()
+    });
+
+    if (targetProg.inboxNotes) {
+      targetProg.inboxNotes = targetProg.inboxNotes.filter(n => n.id !== currentSparringNote.id);
+    }
+
+    chrome.storage.local.set({ programs: programsData }, () => {
+      renderProgramDashboard();
+      closeModal();
+      alert(`🎉 「${finalTitle}」を正式なエンハンス計画へ昇格しました！\n（消化されたメモはInboxから整理されました）`);
+    });
+  };
 }
 
 async function openPriorityModal(prog) {
@@ -1051,58 +1271,6 @@ async function openPriorityModal(prog) {
     loadingBanner.style.display = "none";
     resultContent.innerText = `⚠️ 優先度診断エラー: ${err.message}`;
   }
-}
-
-async function checkPlansPriorityWithAI(prog, plans) {
-  if (!apiConfig.geminiApiKey) {
-    throw new Error("Gemini APIキーが設定されていません。「⚙️ 設定」タブでAPIキーを設定してください。");
-  }
-
-  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
-  const fullSourceCode = await loadFullExtensionSourceCode();
-
-  const plansListText = plans.map((p, idx) => `[計画 ${idx + 1}] [${p.targetVer || '次期版'}] ${p.title} (種別: ${p.verType === 'patch' ? 'バグ修正' : '機能追加'})`).join("\n");
-
-  const prompt = `あなたはプロのシニアテックリード兼プロジェクトマネージャーです。
-現在開発中のプログラム「${prog.name}」において、以下の複数のエンハンス計画（未着手）がストックされています。
-現在稼働している全ソースコードを熟読した上で、手戻りが最も少なく、依存関係や安全性を考慮した「おすすめの着手順序」をプロの視点で助言してください。
-
-【ストックされている計画一覧】
-${plansListText}
-
-【厳格な指示】
-HTMLタグやMarkdown装飾記号は一切使わず、以下のフォーマットで簡潔に出力してください。
-
-■ 💡 推奨着手順序:
-1. 【最優先】[計画番号] 理由
-2. 【第2順位】[計画番号] 理由
-...
-
-■ ⚠️ 同時改修時の注意点（コンフリクトやデグレードを避けるための要点 2〜3行）
-
-【現在稼働中のStudioマネージャー 全ソースコード一式】
-${fullSourceCode}
-`;
-
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2 }
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
-  }
-
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "診断結果を取得できませんでした。";
 }
 
 async function openTriageModal(prog) {
@@ -1137,90 +1305,6 @@ async function openTriageModal(prog) {
   } catch (err) {
     loadingBanner.style.display = "none";
     container.innerHTML = `<div style="color: #ef4444; padding: 20px;">⚠️ 仕分け推論エラー: ${err.message}</div>`;
-  }
-}
-
-async function runAiTriage(prog, notes) {
-  if (!apiConfig.geminiApiKey) {
-    throw new Error("Gemini APIキーが設定されていません。「⚙️ 設定」タブで設定してください。");
-  }
-
-  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
-
-  const currentVer = prog.version || "v1.0.0";
-  const nextMinor = calculateNextVersion(currentVer, "minor");
-  const nextPatch = calculateNextVersion(currentVer, "patch");
-
-  const existingPlansText = (prog.enhancePlans || []).map(p => `[計画ID:${p.id}] [${p.targetVer}] ${p.title}`).join("\n") || "登録計画なし";
-  const notesText = notes.map(n => `[メモID:${n.id}] ${n.text}`).join("\n");
-
-  const prompt = `あなたはプロのシニアテックリード兼プロジェクトマネージャーです。
-開発者が殴り書きした【気付き・改善メモ】を、現在登録されている【既存のエンハンス計画】と照合し、
-① 既存計画との重複検知（マージ統合提案）
-② 小分け vs まとめ（パッケージ化）の新規計画提案
-を安全に仕分けてください。
-
-【プログラム名】: ${prog.name}
-【現在の稼働バージョン】: ${currentVer}（次期マイナー: ${nextMinor}, 次期パッチ: ${nextPatch}）
-
-【既存のエンハンス計画一覧】
-${existingPlansText}
-
-【殴り書きメモ一覧】
-${notesText}
-
-【厳格な指示】
-必ず以下のJSONフォーマットのみをプレーンテキストで出力してください（Markdownの\`\`\`json記号は含めないでください）。
-
-{
-  "suggestions": [
-    {
-      "action": "merge",
-      "targetPlanId": "既存計画ID",
-      "noteId": "メモID",
-      "reason": "なぜこの既存計画に統合すべきか（理由）",
-      "appendToPlan": "計画に追記する要件ドラフト"
-    },
-    {
-      "action": "create",
-      "verType": "minor" または "patch",
-      "targetVer": "${nextMinor}" または "${nextPatch}",
-      "title": "整理された新しい計画タイトル",
-      "noteIds": ["メモID1", "メモID2"],
-      "costEstimate": "高コスパ(15分)" または "中コスパ(40分)" または "大規模(2時間)",
-      "reason": "なぜまとめるか（または小分けにするか）の理由",
-      "promptDraft": "AI Studio用の指示プロンプトドラフト"
-    }
-  ]
-}
-`;
-
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.1 }
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
-  }
-
-  const data = await res.json();
-  let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-  rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-
-  try {
-    return JSON.parse(rawText);
-  } catch (e) {
-    console.warn("JSON解析失敗、生テキストから復元試行:", rawText);
-    throw new Error("AIの応答を仕分けデータに変換できませんでした。もう一度お試しください。");
   }
 }
 
@@ -1315,7 +1399,7 @@ function initTriageModalHandlers() {
           verType: sug.verType || "minor",
           title: sug.title,
           prompt: sug.promptDraft || "",
-          aiAdvice: `【工数目安】: ${sug.costEstimate || '中'}\n【仕分け理由】: ${sug.reason}`,
+          aiAdvice: "",
           status: "todo",
           createdAt: Date.now()
         });
@@ -1386,7 +1470,7 @@ function initEnhanceModalHandlers() {
   const closeDispatchBtn = document.getElementById("closeDispatchModalBtn");
   closeDispatchBtn.onclick = () => dispatchOverlay.classList.remove("active");
 
-  // 🚀 「▶ 着手」を押した瞬間に、予定バージョンをピンポイント指定した厳格ルールを自動合成してコピー！
+  // 🚀 「▶ 着手」を押した瞬間に、「壁打ち・逆質問トリガー ＆ 代表ファイル1箇所集中」を組み込んだプロンプトを自動合成・コピー！
   document.querySelectorAll(".dispatch-pick-btn").forEach(btn => {
     btn.onclick = (e) => {
       const accId = e.target.dataset.account;
@@ -1400,21 +1484,25 @@ function initEnhanceModalHandlers() {
         accountsData[accId].notes = currentTargetPlan.prompt;
       }
 
-      const bodyRequirement = currentTargetPlan.prompt || `■ 実装要件: ${currentTargetPlan.title}\nこの機能の開発を開始してください。`;
+      const bodyRequirement = currentTargetPlan.prompt || `■ 実装の目的:\n${currentTargetPlan.title}\n\n■ 具体的な実装要件:\n・この機能の安全な実装を行ってください。`;
 
-      // 🛡️ 黄金ワークフロー：予定バージョンを1発目からAIに名乗らせる厳格ルールヘッダーを自動付与
-      const textToCopy = `【バージョン管理およびファイル出力の厳格ルール】
-1. 今回の作業バージョン: 【${targetVer}】
-2. 修正対象のファイルのみ出力すること:
-   - 修正を行うファイルだけを出力し、修正のないファイルは一切出力しないでください。
-   - 今回修正したファイルには、必ず1行目に以下のリビジョンコメントを記載してください:
-     ・JavaScript: // [${targetVer} 作業版 Rev.◯] 今回の修正要約
-     ・HTML: <!-- [${targetVer} 作業版 Rev.◯] 今回の修正要約 -->
-     ・CSS: /* [${targetVer} 作業版 Rev.◯] 今回の修正要約 */
-3. 修正のないファイルの不可侵:
-   - 今回修正しなかったファイルは、以前の古いバージョンのままで正常です。無理にバージョンを書き換えたり出力したりしないでください。
+      // 🛡️ 黄金ワークフロー：壁打ち・逆質問トリガー ＆ 代表ファイル1箇所集中ルールを完全自動合成
+      const textToCopy = `【進め方およびバージョン管理の厳格ルール】
+1. 今回の目標バージョン: 【${targetVer}】
+2. 【最重要】いきなりコードを出力せず、まず壁打ち（改修方針提示・逆質問）を行うこと:
+   - いきなり実装コードを出力することは固く禁じます。
+   - 手元の全コードを確認した上で、【改修方針・考えられる選択肢・リスク】を提示してください。
+   - 仕様に曖昧な点や確認事項があれば、必ず私に「逆質問」してください。
+   - 私と対話（壁打ち）を行い、方針の合意・承認を得てからコード出力に着手してください。
+3. 【重要：代表ファイル1箇所集中のバージョン管理ルール】:
+   - バージョン番号の管理は、プログラムの【代表ファイル1箇所のみ】で行ってください。
+     ・Chrome拡張機能: manifest.json の "version" のみ
+     ・Webアプリケーション: index.html（画面右下・フッター等のバージョン表示部）のみ
+     ・その他のファイル（JavaScript、CSS、サブHTML等）には、バージョン番号を書かないでください（ヘッダーコメント等でのバージョン記載は不要です）。
+   - バージョン更新のためだけの無意味なファイル出力は固く禁じます。
+   - 純粋にロジック・仕様・デザインが実際に修正されたファイルだけを出力し、修正のないファイルは「ファイル名 (修正なし)」と表示してコードブロックは絶対に出力しないでください。
 
-【今回の改修要件】
+【今回の実装要件】
 ${bodyRequirement}`;
 
       navigator.clipboard.writeText(textToCopy).then(() => {
@@ -1430,71 +1518,10 @@ ${bodyRequirement}`;
         document.querySelector('.tab-btn[data-tab="tab1"]').classList.add("active");
         document.getElementById("tab1").classList.add("active");
 
-        alert(`✅ 【ID ${accId}】に「${currentTargetPlan.title}」をセットしました！\n\nAI Studio用の指示プロンプト（予定バージョン: ${targetVer} 指定済み）をクリップボードにコピーしました！\nそのままID ${accId} の「このタブを開く」を押して、AI Studioに貼り付け（Ctrl+V）して開発を開始してください！`);
+        alert(`✅ 【ID ${accId}】に「${currentTargetPlan.title}」をセットしました！\n\nAI Studio用の指示プロンプト（壁打ち・逆質問トリガー ＆ 代表ファイル1箇所集中ルール注入済み）をクリップボードにコピーしました！\n\nそのままID ${accId} の「このタブを開く」を押して、AI Studioに貼り付け（Ctrl+V）してください！AIがいきなりコードを出さず、方針提示・逆質問から対話をスタートしてくれます！`);
       });
     };
   });
-}
-
-async function generateBreakdownPromptWithAI(planTitle, targetVer = "次期版") {
-  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
-  const fullSourceCode = await loadFullExtensionSourceCode();
-
-  const prompt = `あなたはプロのシニアソフトウェアエンジニア兼テックリードです。
-ユーザーがキーワードとして入力した【計画タイトル】について、予定バージョン【${targetVer}】に合わせて、現在稼働している全ソースコードを熟読した上で、
-①「AI Studioにそのまま貼り付けて一発で開発を開始できる高品質な指示プロンプト」
-②「難易度と改修方針のアドバイス」
-の2点を作成してください。
-
-【計画タイトル】: ${planTitle}
-【予定バージョン】: ${targetVer}
-
-【厳格な指示】
-以下の「=== PROMPT ===」と「=== ADVICE ===」のセパレーターで区切ってプレーンテキストで出力してください。
-
-=== PROMPT ===
-あなたはプロのエンジニアです。
-以下の仕様に基づき、改修コードを出力してください。
-
-【改修の目的】: ...
-【具体的な改修要件】:
-1. ...
-2. ...
-【厳格ルール】: 既存の正常に動作している仕様・ロジックを勝手に削除・省略せず、指示箇所のみを確実に変更すること。全コードを出力すること。
-=== ADVICE ===
-■ 難易度判定: ★☆☆（低）〜 ★★★（高）/ 想定時間
-■ 改修対象ファイル・箇所: ...
-■ ⚠️ 注意点・デグレード防止: ...
-
-【現在稼働中のStudioマネージャー 全ソースコード一式】
-${fullSourceCode}
-`;
-
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2 }
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
-  }
-
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-
-  const parts = text.split("=== ADVICE ===");
-  const promptPart = parts[0]?.replace("=== PROMPT ===", "").trim() || text;
-  const advicePart = parts[1]?.trim() || "診断アドバイス完了";
-
-  return { prompt: promptPart, advice: advicePart };
 }
 
 function openEditHistoryModal(prog) {
@@ -1641,7 +1668,7 @@ function renderFormattedSummaryBoxes(rawText, query = "") {
         </div>
         <div class="knowledge-section-box">
           <div class="section-box-header">💡 得られたノウハウ・知見・重要キーワード</div>
-          <div class="section-box-content">${highlightSearchText(knowhowText || '特に記録なし', query)}</div>
+          <div class="section-box-content">${highlightSearchText(knowhowText || '特別記録なし', query)}</div>
         </div>
       </div>
     `;
