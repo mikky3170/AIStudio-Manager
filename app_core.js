@@ -1,4 +1,4 @@
-// [v1.3.0 作業版 Rev.2] JSON・定数・コメント記号の網羅判定によるプリフライト誤検知ゼロ化
+// [v1.4.0 作業版 Rev.3] 代表ファイル1箇所集中ルールへのSystemInstruction改訂およびプリフライト検査のスマート化
 const APP_DEFAULT_VERSION = "v1.3.0";
 
 function createInitialAccounts() {
@@ -41,7 +41,7 @@ const defaultPrograms = [
     saveHistory: [
       {
         version: "v1.3.0",
-        timestamp: Date.now(),
+        timestamp: Date.now() - 3600000,
         dateStr: "2024/11/6 16:30",
         commitMsg: "v1.3.0: 安定集計エンジンの確立とバージョン自動着手",
         summary: "■ 監視・集計エンジンの堅牢化およびバージョン管理の完全自動化\n・異常値ヒューズ搭載によるリソース配分の誤爆加算の完全根絶\n・着手プロンプトへの予定バージョン自動注入による手戻りゼロ化\n・ガイド詳細完全版の復元およびマスタ永続化の確立"
@@ -61,18 +61,7 @@ const defaultPrograms = [
         summary: "■ AIコンシェルジュ機能の初期搭載\n・画面右下に常駐する専任コンシェルジュパネルと音声波形ビジュアライザーの実装\n・全コードをプロンプトへ注入する推論エンジンの構築"
       }
     ],
-    enhancePlans: [
-      {
-        id: "plan_sample_1",
-        targetVer: "v1.4.0",
-        verType: "minor",
-        title: "AIコンシェルジュ機能の他アプリ移植・組み込み",
-        prompt: "あなたはプロのフロントエンドエンジニア兼テックリードです。\n現在開発中のWebアプリケーションに、画面右下に常駐する「専任AIコンシェルジュ（フローティングパネル型）」を実装してください。\n\n【機能・UI要件】\n1. フローティングボタン ＆ パネル: 画面右下に常駐、マウスドラッグ移動対応。\n2. 音声入力とリアルタイム波形ビジュアライザー: Web Speech API ＋ Web Audio API による赤色5本バーのリアルタイム伸縮、フィラー除去機能。\n3. 推論エンジン: Gemini API連携、結論ファースト、画面上の日本語で案内、末尾に【💡 推奨アクション】を添えること。\n4. 待機メッセージ: 「ただいまマニュアルを一生懸命調べておりますので、もうしばらくお待ちください。」\n\n上記を満たす HTML / CSS / JavaScript の実装コードを出力してください。",
-        aiAdvice: "【難易度】: ★★☆（中）\n【実現方針】: display.htmlのUIとapp_concierge.jsのコンシェルジュ関連関数を他アプリに移植。Manifestパーミッション不要で動作可能。",
-        status: "todo",
-        createdAt: Date.now()
-      }
-    ]
+    enhancePlans: []
   },
   {
     id: "prog_2",
@@ -237,6 +226,14 @@ const defaultCommonSystemInstruction = `あなたは、私が指示するプロ�
 4. ドキュメント・ガイドの不可侵:
    マニュアルや仕様書、ガイド等を更新する際は、既存の記載内容を勝手に圧縮・削除せず、差分追記原則に従うこと。
 
+【重要：バージョン管理とファイル出力の絶対ルール（代表ファイル1箇所集中）】
+1. バージョン番号の管理は、プログラムごとに定められた【代表ファイル1箇所のみ】で行うこと。
+   ・Chrome拡張機能: manifest.json の "version" のみ
+   ・Webアプリケーション: index.html（画面右下・フッター等のバージョン表示部）のみ
+   ・その他のファイル（JavaScript、CSS、サブHTML等）には、バージョン番号を書かない（ヘッダーコメント等でのバージョン記載は不要）。
+2. バージョン更新のためだけの無意味なファイル出力は固く禁ずる。
+   ロジック・仕様・デザインが実際に修正されたファイルだけを出力すること。修正のないファイルは「ファイル名 (修正なし)」とだけ表示し、コードブロックは絶対に出力しないこと。
+
 【Gemini API連携モデルの厳格固定】
 システム内でGemini APIのモデルを指定・実装・提案する際は、必ず以下の2モデルのみを使用すること。
 ① 第1優先（主軸）: gemini-3.5-flash-lite
@@ -251,12 +248,7 @@ const defaultCommonSystemInstruction = `あなたは、私が指示するプロ�
      1行目に「ファイル名 (修正あり)」とだけ表記し、直後に \`\`\`言語名 でコードブロックを開始して全コードを出力すること。
    - 修正がない場合:
      「ファイル名 (修正なし)」とだけ表示し、コードブロックは出力しないこと。
-2. 作業リビジョンヘッダーの付与:
-   - 修正コードを出力する際は、ファイルの1行目に必ず以下の作業用リビジョンコメントを記載すること。
-     ・JavaScriptファイル: // [稼働Ver 作業版 Rev.◯] 今回の修正要約
-     ・HTMLファイル: <!-- [稼働Ver 作業版 Rev.◯] 今回の修正要約 -->
-     ・CSSファイル: /* [稼働Ver 作業版 Rev.◯] 今回の修正要約 */
-3. UI崩れ・ボタン消失・Citations防止（重要）:
+2. UI崩れ・ボタン消失・Citations防止（重要）:
    - コードブロックを出力した後は、その末尾に挨拶、ステータス解説、まとめ等の後続テキストを一切記述せず、コードブロックを閉じた時点で回答を完全終了すること（解説や報告は、コード出力前の事前提案フェーズですべて完了させておくこと）。`;
 
 // === グローバル状態管理 (State) ===
@@ -288,7 +280,7 @@ const openedInboxProgIds = new Set();
 
 let systemSourceCodeBundle = "";
 
-// === 共通ユーティリティ（純粋JST計算・二重タイムゾーン変換の完全根絶） ===
+// === 共通ユーティリティ ===
 function escapeHtml(str) {
   return (str || "")
     .replace(/&/g, "&amp;")
@@ -296,7 +288,6 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;");
 }
 
-// UTCタイムスタンプから純粋なJST日付文字列 (YYYY-MM-DD) を1本で決定論的に算出
 function getPureJstDateString(epochMs) {
   const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
   const jstDate = new Date(epochMs + JST_OFFSET_MS);
@@ -306,7 +297,6 @@ function getPureJstDateString(epochMs) {
   return `${y}-${m}-${d}`;
 }
 
-// 17時基準のJST業務日付キー (17:00跨ぎの前後30日間、1ミリ秒のズレも許さない正確算出)
 function getTodayResetDateKey() {
   const nowMs = Date.now();
   const targetMs = nowMs - (17 * 60 * 60 * 1000);
@@ -408,7 +398,6 @@ async function loadFullExtensionSourceCode() {
   return systemSourceCodeBundle;
 }
 
-// 🎯 高精度プログラム特定リゾルバー
 function resolveCanonicalProgram(item) {
   const existing = programsData.find(p => p.id === item.programId);
   if (existing) return existing;
@@ -435,7 +424,6 @@ function resolveCanonicalProgram(item) {
   return programsData.find(p => p.id === "prog_10") || programsData[0];
 }
 
-// 🛡️ 恒久対策：ユーザー編集データの完全不可侵保護 ＆ 不足枠の安全シード処理
 function cleanupAndMigrateSaveHistory() {
   let hasChanges = false;
 
@@ -478,10 +466,13 @@ function cleanupAndMigrateSaveHistory() {
       if (!Array.isArray(current.saveHistory)) { current.saveHistory = dp.saveHistory || []; hasChanges = true; }
       if (!Array.isArray(current.enhancePlans)) { current.enhancePlans = dp.enhancePlans || []; hasChanges = true; }
 
-      // 01番(Studioマネージャー)の稼働バージョンをv1.3.0に同期
-      if (current.id === "prog_1" && current.version !== "v1.3.0") {
-        current.version = "v1.3.0";
-        hasChanges = true;
+      // 🛡️ B案：勝手なバージョン昇格を撤廃し、確定したGitHubセーブ履歴の最新と厳格同期
+      if (current.saveHistory && current.saveHistory.length > 0) {
+        const latestSaved = current.saveHistory[0].version;
+        if (latestSaved && current.version !== latestSaved) {
+          current.version = latestSaved;
+          hasChanges = true;
+        }
       }
     }
   });
@@ -543,7 +534,6 @@ function cleanupAndMigrateSaveHistory() {
   }
 }
 
-// === リソース配分の純粋集計エンジン (モック完全撤去・決定論的JST集計) ===
 function calculateAggregatedTokens() {
   const nowMs = Date.now();
   const todayKey = getTodayResetDateKey();
@@ -600,13 +590,240 @@ function calculateAggregatedTokens() {
   return { totals: progTotals, desc: descText };
 }
 
-// === 🛡️ GitHub事前チェック（プリフライト診断）エンジン ===
-// （JSONプロパティ・定数・コメント記号の網羅判定により誤検知ゼロ化）
+// === 💬 アイデア壁打ち（第1段階の頭の整理：自然言語要件化アシスタント） ===
+async function runInitialSparring(prog, noteText) {
+  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
+
+  const currentVer = prog.version || "v1.0.0";
+  const nextMinor = calculateNextVersion(currentVer, "minor");
+  const nextPatch = calculateNextVersion(currentVer, "patch");
+
+  const prompt = `あなたはプロのアジャイルプロダクトマネージャー兼テクニカルライターです。
+開発者が思いついた【アイデアの卵（殴り書きメモ）】を読み解き、第1段階の頭の整理（タイトル言語化と要件の箇条書き）を行ってください。
+
+【対象プログラム】: ${prog.name} (現在稼働Ver: ${currentVer})
+【固有要件・方針】: ${prog.customInstruction || 'なし'}
+【アイデアの卵（元のメモ）】:
+${noteText}
+
+【厳格な指示（絶対遵守）】
+1. ソースコードの内部関数や実装技術をでっち上げて講釈しないでください（コード実体はAI Studioで扱います）。
+2. プログラミング用語やシステム用語を使わず、ユーザーが体験する「目的」と「使い勝手の要望」だけを整理してください。
+3. タイトルは40文字以内で、何をする機能かがひと目でわかる日本語にしてください。
+4. 難易度や工数見積もりは一切出力しないでください。
+5. 以下のJSONフォーマットのみをプレーンテキストで出力してください（Markdownの\`\`\`json記号は含めないでください）。
+
+{
+  "suggestedTitle": "40文字以内のスッキリした計画タイトル",
+  "targetVer": "${nextMinor}" または "${nextPatch}",
+  "aiMessage": "💡 要約・スコープ整理:\n・【この機能の目的】: （1〜2行で簡潔に）\n・【実装したい具体的な要件】:\n  1. ...\n  2. ...\n・【今回の判断（安全策）】: （手戻りを避けるため、今回は見送るべき点や注意点など）\n\nこれでよろしければ下の「正式計画へ昇格」を押してください。調整したい点があればご返信ください。"
+}
+`;
+
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.2 }
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  }
+
+  const data = await res.json();
+  let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+  rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+  try {
+    return JSON.parse(rawText);
+  } catch (e) {
+    return {
+      suggestedTitle: noteText.substring(0, 35),
+      targetVer: nextMinor,
+      aiMessage: `💡 要約: ${noteText.substring(0, 50)}...\n\n🎯 今回やるべきことと見送ることを整理して計画へ昇格しましょう！`
+    };
+  }
+}
+
+async function continueSparringChat(prog, userReply) {
+  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
+
+  const prompt = `あなたはプロのアジャイルプロダクトマネージャーです。
+開発者との壁打ち対話です。ユーザーの要望やチューニング指示に基づき、要件箇条書きを再調整し、必要ならタイトルやバージョンも更新してください。
+
+【ユーザーからの指示】:
+${userReply}
+
+【厳格な指示】
+以下のJSONフォーマットのみをプレーンテキストで出力してください（Markdownの\`\`\`json記号は含めないでください）。
+
+{
+  "updatedTitle": "調整後の計画タイトル（変更不要なら現在のタイトル）",
+  "updatedVer": "推奨バージョン（変更不要なら現在のバージョン）",
+  "aiMessage": "了解しました！ユーザーの要望を反映した要件整理（2〜4行で結論ファースト）。納得できたら「正式計画へ昇格」を押してください。"
+}
+`;
+
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.2 }
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  }
+
+  const data = await res.json();
+  let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+  rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+  try {
+    return JSON.parse(rawText);
+  } catch (e) {
+    return {
+      updatedTitle: null,
+      updatedVer: null,
+      aiMessage: rawText || "了解しました！方針を更新しました。"
+    };
+  }
+}
+
+// === ✨ AIでブレークダウン＆プロンプト自動起草（01〜10番完全統一・自然言語要件化） ===
+async function generateBreakdownPromptWithAI(planTitle, targetVer = "次期版") {
+  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
+
+  const progName = currentTargetProg ? currentTargetProg.name : "対象プログラム";
+  const customInst = currentTargetProg ? (currentTargetProg.customInstruction || "") : "";
+
+  const prompt = `あなたはプロのシニアプロダクトマネージャー兼テクニカルライターです。
+ユーザーがキーワードとして入力した【計画タイトル】について、予定バージョン【${targetVer}】に合わせて、AI Studioにそのまま貼り付けて開発を開始できる「目的と実装要件の箇条書き指示文」を作成してください。
+
+【対象プログラム】: ${progName}
+【計画タイトル】: ${planTitle}
+【予定バージョン】: ${targetVer}
+【固有要件・設計方針】: ${customInst || '特になし'}
+
+【厳格な指示（絶対遵守）】
+1. コード実体を知らない状態で、架空の関数名・変数名・HTML IDをでっち上げてプロンプトに盛り込むことは固く禁じます（ハルシネーションによるデグレード防止）。
+2. プログラミングAIが手元のコードを見て正しく判断できるように、「この機能で何を達成したいか（目的）」と「画面や操作でどう振る舞うべきか（仕様要件）」を自然な日本語の箇条書きで明確に定義してください。
+3. 難易度や想定時間の見積もりは出力しないでください。
+4. 説明や前置きは出力せず、以下のフォーマットのみを出力してください。
+
+■ 実装の目的:
+（この改修で達成したいユーザー価値・利便性を1〜2行で簡潔に）
+
+■ 具体的な実装要件:
+1. （画面表示やUIに関する具体的な動作要件）
+2. （データ処理や連携に関する具体的な動作要件）
+3. （エラー時や例外時の安全な挙動に関する要件）
+`;
+
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.2 }
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  }
+
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+
+  return { prompt: text, advice: "" };
+}
+
+// === 🤖 AI着手優先度チェック（要求・仕様レベルの統廃合エンジン） ===
+async function checkPlansPriorityWithAI(prog, plans) {
+  if (!apiConfig.geminiApiKey) {
+    throw new Error("Gemini APIキーが設定されていません。「⚙️ 設定」タブでAPIキーを設定してください。");
+  }
+
+  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
+
+  const plansListText = plans.map((p, idx) => `[計画 ${idx + 1}] [${p.targetVer || '次期版'}] ${p.title} (種別: ${p.verType === 'patch' ? 'バグ修正' : '機能追加'})\n要件メモ: ${p.prompt || p.aiAdvice || 'なし'}`).join("\n\n");
+
+  const prompt = `あなたはプロのシニアアジャイルプロダクトマネージャーです。
+現在開発中のプログラム「${prog.name}」において、以下の複数のエンハンス計画（未着手）がストックされています。
+機能スコープ、依存関係、手戻りの少なさ、ユーザー体験への影響の観点から、
+① 各計画の明確な優先順位と「納得できる理由」
+② 一緒にやるべき「まとめ提案（パッケージ化）」
+③ 盛り込みすぎの計画に対する「小分け提案（分割）」
+の3本柱でプロのアドバイスを提供してください。
+
+【プログラム名】: ${prog.name} (現在稼働Ver: ${prog.version || 'v1.0.0'})
+【固有設計方針】: ${prog.customInstruction || 'なし'}
+【ストックされている計画一覧】
+${plansListText}
+
+【厳格な指示】
+HTMLタグやMarkdown装飾記号は一切使わず、以下の日本語フォーマットで出力してください。
+
+■ 💡 推奨着手順序と明確な理由:
+1. 【最優先】[計画番号] 理由（不具合の早期解消、基盤機能の先行、手戻りの少なさなど納得できる根拠）
+2. 【第2順位】[計画番号] 理由
+...
+
+■ 📦 まとめ提案（パッケージ化・セット作業推奨）:
+・（同じ画面領域や関連する機能スコープがあれば、「計画Xと計画Yは同一体験に関わるためセットで着手するのが効率的です」といった提案。なければ「特になし。1件ずつ独立して安全に着手可能です」）
+
+■ ✂️ 小分け提案（分割・段階リリース推奨）:
+・（要望が大きくリスクが高い計画があれば、「計画Zは一度にやらず、まず〇〇だけ先行してパッチ版にし、残りは次回に回すのが安全です」といった分割提案。なければ「特になし。現在の粒度で適切です」）
+
+■ ⚠️ デグレード防止・手戻り回避の要点（2〜3行）
+`;
+
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.2 }
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  }
+
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "診断結果を取得できませんでした。";
+}
+
+// === 🛡️ GitHub事前チェック（プリフライト診断：代表ファイル1箇所集中スマート検証） ===
 async function runPreflightInspection(prog, relVersion, files) {
   const issues = [];
   const fileNames = files.map(f => f.name);
+  const cleanTargetVer = relVersion.replace(/^v/i, "");
 
-  // 1. Web公開時の index.html 存在チェック
+  // 1. Web公開プログラムの場合の index.html 必須チェック
   if (prog.isWebPublish) {
     const hasIndexHtml = fileNames.some(name => name.toLowerCase() === "index.html");
     if (!hasIndexHtml) {
@@ -619,7 +836,7 @@ async function runPreflightInspection(prog, relVersion, files) {
     }
   }
 
-  // 2. 不正ファイル名チェック（全角・空白）
+  // 2. 不正文字（全角・空白）スキャン
   files.forEach(f => {
     const hasFullWidth = /[^\u0000-\u007F]/.test(f.name);
     const hasSpace = /\s/.test(f.name);
@@ -633,77 +850,45 @@ async function runPreflightInspection(prog, relVersion, files) {
     }
   });
 
-  // 3. 01_Studioマネージャーの manifest.json バージョン照合
+  // 3. 🏛️ 【代表ファイル1箇所集中】バージョンのスマート照合
+  // プログラム種別ごとの代表ファイルのみを対象にバージョン表記を検査する
   if (prog.id === "prog_1") {
+    // Chrome拡張機能 ➜ manifest.json のみ検査
     const manifestFile = files.find(f => f.name.toLowerCase() === "manifest.json");
     if (manifestFile && !manifestFile.isBase64 && manifestFile.content) {
       const match = manifestFile.content.match(/"version"\s*:\s*"([^"]+)"/);
       if (match) {
         const manifestVer = match[1];
-        const cleanRelVer = relVersion.replace(/^v/i, "");
-        if (manifestVer !== cleanRelVer) {
+        if (manifestVer !== cleanTargetVer) {
           issues.push({
             type: "danger",
-            badge: "⛔ バージョン不一致",
-            title: `manifest.jsonのバージョン (${manifestVer}) とリリースVer (${cleanRelVer}) が一致していません`,
-            desc: `Chrome拡張機能では manifest.json の version が正式な稼働バージョンとなります。今回登録しようとしているバージョン「${cleanRelVer}」に合わせて manifest.json も修正してください。`
+            badge: "⛔ 代表ファイル バージョン不一致",
+            title: `manifest.jsonのバージョン (${manifestVer}) とリリース予定 (${cleanTargetVer}) が一致していません`,
+            desc: `Chrome拡張機能のバージョン管理は代表ファイル「manifest.json」で行います。\n今回登録しようとしているバージョン「${cleanTargetVer}」に合わせて manifest.json 内の "version" を修正してください。`
           });
         }
       }
     }
-  }
-
-  // 4. 🔍 全プログラム共通：コード内バージョンの厳格整合性照合（変更ありファイル・新規ファイルのみ対象）
-  const cleanTargetVer = relVersion.replace(/^v/i, "");
-  for (const f of files) {
-    if (f.isBase64) continue; // バイナリ（画像・音声等）はスキップ
-
-    const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
-    if (!['.js', '.html', '.css', '.bat', '.json'].includes(ext)) continue;
-
-    // GitHubの前回コードを取得して変更有無を確認
-    const oldCode = await fetchOldFileFromGitHub(prog.githubRepo, f.name);
-    const isModified = (oldCode !== null && oldCode !== f.content);
-    const isNewFile = (oldCode === null);
-
-    // 変更がないファイル（oldCode === f.content）は前回のバージョンのままで100%正常なので検査スキップ！
-    if (isModified || isNewFile) {
-      // コード先頭15行からバージョンパターンをスキャン
-      const headLines = f.content.split("\n").slice(0, 15).join("\n");
-
-      // 多様なバージョン記述パターンを網羅（コメント、JSONプロパティ、定数/変数宣言）
-      const verMatch = (
-        headLines.match(/\[v?(\d+\.\d+(\.\d+)?)[\s\]]/i) || // [v1.3.0] or [1.3.0]
-        headLines.match(/["']?version["']?\s*[:=]\s*["']v?(\d+\.\d+(\.\d+)?)["']/i) || // "version": "1.3.0", version = '1.3.0'
-        headLines.match(/(?:const|let|var)\s+[a-zA-Z0-9_]*ver(?:sion)?\s*=\s*["']v?(\d+\.\d+(\.\d+)?)["']/i) || // const APP_VERSION = "1.3.0"
-        headLines.match(/(?:\/\/|\/\*|<!--|REM|::)\s*v?(\d+\.\d+(\.\d+)?)/i) // // v1.3.0, /* v1.3.0 */, <!-- v1.3.0 -->, REM v1.3.0
-      );
-
-      if (!verMatch) {
-        const isJson = ext === '.json';
-        issues.push({
-          type: "warning",
-          badge: "⚠️ バージョン未記載",
-          title: `修正ファイル「${f.name}」にバージョン情報が見当たりません`,
-          desc: isJson
-            ? `今回修正または新規追加されたJSONファイルですが、"version": "${cleanTargetVer}" の記述が見当たりません。\nバージョン番号が記載されているかご確認ください。`
-            : `今回修正または新規追加されたファイルですが、先頭に [${relVersion} 作業版] などのバージョン情報が見当たりません。\nAI Studioで修正したファイルにはバージョン情報を明記することを推奨します。`
-        });
-      } else {
+  } else if (prog.isWebPublish) {
+    // Webアプリケーション ➜ index.html 内のバージョン表示を検査（存在する場合）
+    const indexFile = files.find(f => f.name.toLowerCase() === "index.html");
+    if (indexFile && !indexFile.isBase64 && indexFile.content) {
+      const verMatch = indexFile.content.match(/(?:id|class)=["'][^"']*(?:ver|version)[^"']*["'][^>]*>v?([0-9.]+)/i);
+      if (verMatch) {
         const foundVer = verMatch[1];
         if (foundVer !== cleanTargetVer && foundVer !== relVersion) {
           issues.push({
             type: "warning",
-            badge: "⚠️ バージョン書き換え忘れの可能性",
-            title: `修正ファイル「${f.name}」内のバージョン (${foundVer}) がリリース予定 (${cleanTargetVer}) と異なります`,
-            desc: `コードが更新されていますが、記載されているバージョン情報が「${foundVer}」のままになっています。\nAIへのバージョン書き換え指示を忘れていないか、または古いファイルを誤って添付していないかご確認ください。`
+            badge: "⚠️ 代表ファイル バージョン不一致の可能性",
+            title: `index.html 内の画面表示バージョン (${foundVer}) がリリース予定 (${cleanTargetVer}) と異なります`,
+            desc: `Webアプリの代表ファイル「index.html」内のバージョン表示が「${foundVer}」になっています。\n画面上のバージョン表記を「${relVersion}」に更新したかご確認ください。`
           });
         }
       }
     }
   }
 
-  // 5. 大容量ファイル警告 (25MB超)
+  // 4. 大容量ファイル（25MB超）警告
   files.forEach(f => {
     const mbSize = (f.byteSize || 0) / (1024 * 1024);
     if (mbSize > 25) {
@@ -812,13 +997,13 @@ function openSaveModal(prog, plan = null) {
 
   const isInitial = (!prog.saveHistory || prog.saveHistory.length === 0);
 
-  let defaultVersion = "v1.0.0";
+  let defaultVersion = "v1.4.0";
   if (isInitial) {
     defaultVersion = "v1.0.0";
   } else if (plan) {
     defaultVersion = plan.targetVer || calculateNextVersion(prog.version || "v1.0.0", plan.verType || "minor");
   } else {
-    defaultVersion = calculateNextVersion(prog.version || "v1.0.0", "patch");
+    defaultVersion = calculateNextVersion(prog.version || "v1.0.0", "minor");
   }
 
   const verLabel = document.getElementById("modalVersionLabel");
@@ -903,7 +1088,7 @@ async function analyzeDiffAndGenerateSummary() {
   banner.innerText = `⏳ 前回コードを確認し、${apiConfig.geminiModelName || 'gemini-3.5-flash-lite'} で差分を要約中...`;
 
   const repo = document.getElementById("modalRepoInput").value.trim();
-  const relVersion = document.getElementById("modalReleaseVersionInput").value.trim() || "v1.0.0";
+  const relVersion = document.getElementById("modalReleaseVersionInput").value.trim() || "v1.4.0";
 
   if (!apiConfig.githubToken || !repo) {
     banner.innerText = "⚠️ 上の入力欄に「対象リポジトリ名」、設定タブに「GitHubトークン」を入力してください。";
@@ -914,7 +1099,7 @@ async function analyzeDiffAndGenerateSummary() {
   const planContext = isInitial
     ? `【開発の主目的（初回登録）】: ${currentTargetProg?.name} の初回リリース・ベース機能の登録 (${relVersion})`
     : (currentTargetPlan 
-        ? `【開発の主目的（計画）】: [${currentTargetPlan.targetVer || relVersion}] ${currentTargetPlan.title}\n【予定の指示プロンプト】: ${currentTargetPlan.prompt || 'なし'}`
+        ? `【開発の主目的（計画）】: [${currentTargetPlan.targetVer || relVersion}] ${currentTargetPlan.title}\n【要件指示】: ${currentTargetPlan.prompt || 'なし'}`
         : `【開発の主目的（計画外緊急）】: ${currentTargetProg?.name} の機能改修 (${relVersion})`);
 
   try {
@@ -1076,7 +1261,7 @@ ${diffText || "初回登録・ベースファイル一式"}
 
 async function executeGitHubPush() {
   const repoInputVal = document.getElementById("modalRepoInput").value.trim();
-  const relVersion = document.getElementById("modalReleaseVersionInput").value.trim() || "v1.0.0";
+  const relVersion = document.getElementById("modalReleaseVersionInput").value.trim() || "v1.4.0";
   const commitMsg = document.getElementById("commitMessageInput").value.trim();
   const summary = document.getElementById("changeSummaryArea").value.trim();
 
@@ -1092,7 +1277,6 @@ async function executeGitHubPush() {
   }
 
   if (currentTargetProg) {
-    // 🛡️ プリフライト診断の実行（バージョン整合性を厳格スキャン）
     const issues = await runPreflightInspection(currentTargetProg, relVersion, loadedLocalFiles);
     if (issues.length > 0) {
       pendingPushPayload = { owner, repo, repoInputVal, relVersion, commitMsg, summary };
