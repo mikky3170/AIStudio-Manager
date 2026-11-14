@@ -1,4 +1,4 @@
-// [v1.4.0 作業版 Rev.2] 着手プロンプトの「代表ファイル1箇所集中」ルール化および壁打ち・逆質問トリガー自動合成
+// [v1.4.2 作業版 Rev.4] 直近トークン増分レシート（監査ログ）描画・アコーディオン制御の実装
 
 // === タブ1: IDモニター ＆ トークン管理 ===
 function setupCards() {
@@ -423,17 +423,17 @@ function renderProgramDashboard() {
       if (activePlans.length === 0) {
         plansHtml = `<div style="font-size: 11px; color: #94a3b8; font-style: italic; padding: 6px 0;">現在ストックされている計画はありません。右上の「＋機能追加」「＋バグ修正」または下のInboxから計画を追加してください。</div>`;
       } else {
-        activePlans.forEach(plan => {
+        activePlans.forEach((plan, planIdx) => {
           const tagType = plan.verType === "patch" ? "patch" : "minor";
           const tagText = plan.targetVer || (tagType === "patch" ? "BugFix" : "Enhance");
           const isOpen = openedPlanIds.has(plan.id);
           const titleCharCount = (plan.title || "").length;
 
-          // 🚀 時系列順「編集・着手」➜「セーブ」➜「削除」
           plansHtml += `
             <div class="enhance-item-wrapper ${isOpen ? 'open' : ''}" id="planWrapper-${plan.id}">
               <div class="enhance-item-row" data-plan-id="${plan.id}" data-prog-id="${prog.id}">
                 <div class="enhance-item-info">
+                  <span class="plan-index-badge">#${planIdx + 1}</span>
                   <span class="target-ver-tag ${tagType}">${escapeHtml(tagText)}</span>
                   <span class="enhance-item-title-text" title="${escapeHtml(plan.title)}">${escapeHtml(plan.title)}</span>
                   ${plan.prompt ? `<span class="enhance-badge-prompt">🤖 プロンプト済</span>` : ''}
@@ -511,20 +511,25 @@ function renderProgramDashboard() {
 
       const logHeaderLabel = isTesting
         ? `前回実績: ${escapeHtml(latestSavedVer)}`
-        : `最新稼働版: ${escapeHtml(latest.version || prog.version)}`;
+        : `最新稼働版: ${escapeHtml((latest && latest.version) || prog.version)}`;
 
-      let historyHtml = `
-        <div class="latest-history-box">
-          <div class="latest-history-header">
-            <div class="latest-history-left">
-              <span class="latest-ver-badge">${escapeHtml(latest.version || latestSavedVer)}</span>
-              <span class="latest-commit-title" title="${escapeHtml(latest.commitMsg)}">${escapeHtml(latest.commitMsg)}</span>
+      let historyHtml = "";
+      if (latest) {
+        historyHtml = `
+          <div class="latest-history-box">
+            <div class="latest-history-header">
+              <div class="latest-history-left">
+                <span class="latest-ver-badge">${escapeHtml(latest.version || latestSavedVer)}</span>
+                <span class="latest-commit-title" title="${escapeHtml(latest.commitMsg)}">${escapeHtml(latest.commitMsg)}</span>
+              </div>
+              <span class="latest-history-date">${escapeHtml(latest.dateStr)}</span>
             </div>
-            <span class="latest-history-date">${escapeHtml(latest.dateStr)}</span>
+            <div style="color: #94a3b8; font-size: 11px; line-height: 1.4; white-space: pre-wrap; margin-top: 3px;">${escapeHtml(latest.summary || '変更概要なし')}</div>
           </div>
-          <div style="color: #94a3b8; font-size: 11px; line-height: 1.4; white-space: pre-wrap; margin-top: 3px;">${escapeHtml(latest.summary || '変更概要なし')}</div>
-        </div>
-      `;
+        `;
+      } else {
+        historyHtml = `<div style="font-size: 11px; color: #64748b; font-style: italic; padding: 6px 0;">セーブ履歴がまだありません。</div>`;
+      }
 
       if (olderList.length > 0) {
         historyHtml += `
@@ -696,6 +701,7 @@ function renderProgramDashboard() {
 
   attachEnhanceEvents();
   attachInboxEvents();
+  renderTokenReceiptLogs(); // 🧾 レシートログの描画
 
   document.querySelectorAll(".history-accordion-toggle").forEach(btn => {
     btn.onclick = (e) => {
@@ -736,6 +742,102 @@ function renderProgramDashboard() {
       openEditHistoryModal(target);
     });
   });
+}
+
+// 🧾 【新設】トークン増分レシート（監査ログ）の描画エンジン
+function renderTokenReceiptLogs() {
+  const container = document.getElementById("receiptList");
+  const badge = document.getElementById("receiptCountBadge");
+  if (!container || !badge) return;
+
+  container.innerHTML = "";
+  const logs = tokenTransactionLogsData || [];
+  badge.innerText = `${logs.length}件`;
+
+  if (logs.length === 0) {
+    container.innerHTML = `<div style="font-size: 11px; color: #64748b; font-style: italic; text-align: center; padding: 12px 0;">まだ加算イベントの記録はありません。</div>`;
+    return;
+  }
+
+  logs.forEach(log => {
+    const item = document.createElement("div");
+    let itemClass = "receipt-item";
+    let badgeHtml = "";
+
+    if (log.type === "fuse_blocked") {
+      itemClass += " fuse-blocked";
+      badgeHtml = `<span style="background: #dc2626; color: white; padding: 1px 5px; border-radius: 3px; font-weight: bold; font-size: 10px;">⛔ 異常急増遮断</span>`;
+    } else if (log.type === "manual_correction") {
+      itemClass += " manual-correct";
+      badgeHtml = `<span style="background: #059669; color: white; padding: 1px 5px; border-radius: 3px; font-weight: bold; font-size: 10px;">✏️ 手動補正連動</span>`;
+    } else if (log.type === "system_reset") {
+      itemClass += " system-reset";
+      badgeHtml = `<span style="background: #7c3aed; color: white; padding: 1px 5px; border-radius: 3px; font-weight: bold; font-size: 10px;">⚙️ 日次リセット</span>`;
+    } else if (log.isLargeDelta) {
+      itemClass += " large-warning";
+      badgeHtml = `<span style="background: #d97706; color: white; padding: 1px 5px; border-radius: 3px; font-weight: bold; font-size: 10px;">⚠️ 急増注意</span>`;
+    }
+
+    item.className = itemClass;
+
+    const deltaSign = (log.delta > 0) ? `+${log.delta.toLocaleString()} tk` : (log.delta < 0 ? `${log.delta.toLocaleString()} tk` : `0 tk`);
+    const deltaClass = (log.delta > 0) ? (log.isLargeDelta ? "receipt-delta-badge large" : "receipt-delta-badge") : "receipt-delta-badge minus";
+
+    const idTagHtml = (log.accountId && log.accountId >= 1 && log.accountId <= 4)
+      ? `<span class="receipt-id-tag">ID ${log.accountId}</span>`
+      : "";
+
+    const chatLinkHtml = log.url
+      ? `<a href="${escapeHtml(log.url)}" target="_blank" class="receipt-url-link" title="このチャットを開く">🔗 AI Studio</a>`
+      : "";
+
+    item.innerHTML = `
+      <div class="receipt-row-top">
+        <div class="receipt-meta-left">
+          <span class="receipt-time">${escapeHtml(log.dateStr ? `${log.dateStr} ` : '')}${escapeHtml(log.timeStr || '')}</span>
+          ${idTagHtml}
+          <span class="receipt-prog-name" title="${escapeHtml(log.programName)}">${escapeHtml(log.programName)}</span>
+          ${badgeHtml}
+        </div>
+        <span class="${deltaClass}">${deltaSign}</span>
+      </div>
+      <div class="receipt-row-bottom">
+        <span class="receipt-chat-title" title="${escapeHtml(log.note || log.chatTitle || '')}">${escapeHtml(log.note || log.chatTitle || 'チャット会話')}</span>
+        ${chatLinkHtml}
+      </div>
+    `;
+
+    container.appendChild(item);
+  });
+}
+
+// 🧾 レシートアコーディオンおよびログ消去のイベント初期化
+function initReceiptAccordion() {
+  const head = document.getElementById("receiptHead");
+  const section = document.getElementById("receiptSection");
+  const arrow = document.getElementById("receiptToggleArrow");
+  const clearBtn = document.getElementById("clearReceiptLogsBtn");
+
+  if (head && section) {
+    head.onclick = (e) => {
+      if (e.target.closest("#clearReceiptLogsBtn")) return;
+      section.classList.toggle("open");
+      const isOpen = section.classList.contains("open");
+      if (arrow) arrow.innerText = isOpen ? "▲ 閉じる" : "▼ 展開";
+    };
+  }
+
+  if (clearBtn) {
+    clearBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (confirm("直近の加算レシート（監査ログ）を消去してもよろしいですか？\n※累計トークンやプログラムの集計数値自体は影響を受けません。")) {
+        tokenTransactionLogsData = [];
+        chrome.storage.local.set({ tokenTransactionLogs: [] }, () => {
+          renderTokenReceiptLogs();
+        });
+      }
+    };
+  }
 }
 
 function updateProgramWorkBadgesOnly() {
@@ -1067,7 +1169,7 @@ function updateQuickPlanTitleCount() {
   }
 }
 
-// === 💬 アイデア壁打ち（第1段階の頭の整理 ＆ 計画昇格）制御 ===
+// === 💬 アイデア壁打ち制御 ===
 let currentSparringProg = null;
 let currentSparringNote = null;
 let sparringChatHistory = [];
@@ -1245,6 +1347,7 @@ ${finalTitle}
   };
 }
 
+// 🤖 AI着手優先度診断モーダル
 async function openPriorityModal(prog) {
   if (!prog) return;
   currentTargetProg = prog;
@@ -1256,20 +1359,34 @@ async function openPriorityModal(prog) {
   }
 
   document.getElementById("priorityModalTitle").innerText = `🤖 【${prog.name}】 AI着手優先度チェック（全 ${plans.length} 件）`;
+  document.getElementById("priorityTargetCount").innerText = plans.length;
+
+  const targetListEl = document.getElementById("priorityTargetPlansList");
+  targetListEl.innerHTML = plans.map((p, idx) => `
+    <div class="priority-target-item">
+      <span class="plan-index-badge">#${idx + 1}</span>
+      <span class="target-ver-tag ${p.verType === 'patch' ? 'patch' : 'minor'}">${escapeHtml(p.targetVer || '次期版')}</span>
+      <strong>${escapeHtml(p.title)}</strong>
+    </div>
+  `).join("");
+
   const loadingBanner = document.getElementById("priorityLoadingBanner");
   const resultContent = document.getElementById("priorityResultContent");
 
   loadingBanner.style.display = "block";
-  resultContent.innerText = "";
+  resultContent.style.display = "none";
+  resultContent.innerHTML = "";
   document.getElementById("priorityModalOverlay").classList.add("active");
 
   try {
-    const advice = await checkPlansPriorityWithAI(prog, plans);
+    const formattedHtml = await checkPlansPriorityWithAI(prog, plans);
     loadingBanner.style.display = "none";
-    resultContent.innerText = advice;
+    resultContent.innerHTML = formattedHtml;
+    resultContent.style.display = "flex";
   } catch (err) {
     loadingBanner.style.display = "none";
-    resultContent.innerText = `⚠️ 優先度診断エラー: ${err.message}`;
+    resultContent.innerHTML = `<div class="priority-section-card warning" style="color: #ef4444;">⚠️ 優先度診断エラー: ${escapeHtml(err.message)}</div>`;
+    resultContent.style.display = "flex";
   }
 }
 
@@ -1470,7 +1587,6 @@ function initEnhanceModalHandlers() {
   const closeDispatchBtn = document.getElementById("closeDispatchModalBtn");
   closeDispatchBtn.onclick = () => dispatchOverlay.classList.remove("active");
 
-  // 🚀 「▶ 着手」を押した瞬間に、「壁打ち・逆質問トリガー ＆ 代表ファイル1箇所集中」を組み込んだプロンプトを自動合成・コピー！
   document.querySelectorAll(".dispatch-pick-btn").forEach(btn => {
     btn.onclick = (e) => {
       const accId = e.target.dataset.account;
@@ -1486,7 +1602,6 @@ function initEnhanceModalHandlers() {
 
       const bodyRequirement = currentTargetPlan.prompt || `■ 実装の目的:\n${currentTargetPlan.title}\n\n■ 具体的な実装要件:\n・この機能の安全な実装を行ってください。`;
 
-      // 🛡️ 黄金ワークフロー：壁打ち・逆質問トリガー ＆ 代表ファイル1箇所集中ルールを完全自動合成
       const textToCopy = `【進め方およびバージョン管理の厳格ルール】
 1. 今回の目標バージョン: 【${targetVer}】
 2. 【最重要】いきなりコードを出力せず、まず壁打ち（改修方針提示・逆質問）を行うこと:
@@ -1919,7 +2034,7 @@ function openBaseVersionPicker(btnElement, log) {
   select.focus();
 }
 
-// === タブ3: 設定 ===
+// === タブ3: 設定 ＆ バックアップ ===
 function renderMasterSettings() {
   const tbody = document.getElementById("masterTableBody");
   tbody.innerHTML = "";
@@ -2017,5 +2132,67 @@ function selectProgForSysInst(progId) {
   if (customArea) {
     customArea.focus();
     customArea.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+// 💾 バックアップ ＆ 復元 ＆ GitHub一括同期イベントの完全堅牢化ハンドラ
+function initBackupAndRestoreHandlers() {
+  const exportBtn = document.getElementById("exportBackupBtn");
+  const importBtn = document.getElementById("importBackupBtn");
+  const fileInput = document.getElementById("backupFileInput");
+  const syncGithubBtn = document.getElementById("syncGithubRestoreBtn");
+
+  if (exportBtn) {
+    exportBtn.onclick = () => {
+      exportFullBackupData();
+    };
+  }
+
+  if (importBtn && fileInput) {
+    importBtn.onclick = () => fileInput.click();
+    fileInput.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        importFullBackupData(event.target.result);
+        fileInput.value = "";
+      };
+      reader.readAsText(file);
+    };
+  }
+
+  if (syncGithubBtn) {
+    syncGithubBtn.onclick = async () => {
+      const tokenInput = document.getElementById("githubToken");
+      const currentToken = (tokenInput && tokenInput.value.trim()) || apiConfig.githubToken;
+
+      if (!currentToken) {
+        alert("⚠️ 【GitHub Tokenが未設定です】\n\n画面の「🐙 GitHub Personal Access Token (PAT)」欄にトークンを入力してから、もう一度このボタンを押してください。");
+        if (tokenInput) tokenInput.focus();
+        return;
+      }
+
+      // 🚀 即時の視覚的フィードバック（ボタンの確実な手応え）
+      syncGithubBtn.disabled = true;
+      syncGithubBtn.style.background = "#0284c7";
+      syncGithubBtn.style.borderColor = "#38bdf8";
+      syncGithubBtn.style.color = "#ffffff";
+      syncGithubBtn.innerHTML = `<span>⏳</span> GitHubへ接続して全プログラムのバージョン・履歴を照合中...`;
+
+      try {
+        await restoreAllProgramsFromGitHub();
+      } catch (err) {
+        console.error("GitHub復元エラー:", err);
+        alert(`❌ 【GitHub同期エラーが発生しました】\n\nエラー内容:\n${err.message}\n\n※GitHub Tokenが有効（repo権限あり）か、入力されたリポジトリ名（owner/repo）が存在するかご確認ください。`);
+      } finally {
+        syncGithubBtn.disabled = false;
+        syncGithubBtn.style.background = "#172554";
+        syncGithubBtn.style.borderColor = "#38bdf8";
+        syncGithubBtn.style.color = "#38bdf8";
+        syncGithubBtn.innerHTML = `<span>🐙</span> GitHubから全プログラムのバージョン・履歴を一括自動同期`;
+      }
+    };
   }
 }
