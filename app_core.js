@@ -1,4 +1,4 @@
-// [v1.4.1 作業版 Rev.1] 欠落していたrunAiTriage関数の実装およびAI一括仕分け機能の復旧
+// [v1.4.2 作業版 Rev.6] 直近トークン増分レシート状態管理・リアルタイム同期・アコーディオン初期化の実装
 const APP_DEFAULT_VERSION = "v1.3.0";
 
 function createInitialAccounts() {
@@ -28,7 +28,7 @@ const defaultPrograms = [
   {
     id: "prog_1",
     name: "01_Studio マネージャー(AI Studio連携)",
-    version: "v1.3.0",
+    version: "v1.4.2",
     githubRepo: "your-id/AIStudio-Manager",
     isWebPublish: false,
     customInstruction: "Chrome拡張機能(Manifest V3)の設計規約を遵守すること。バックグラウンドサービスワーカー(background.js)とコンテンツスクリプト(content.js)の通信規約、chrome.storage.localの保存仕様を維持すること。",
@@ -193,11 +193,11 @@ const defaultPrograms = [
   },
   {
     id: "prog_10",
-    name: "10_その他(共通、質問などが中心)",
+    name: "10_共通部品・ツール群（音声、Geminiテスト）",
     version: "v1.0.0",
     githubRepo: "",
     isWebPublish: false,
-    customInstruction: "システムアドバイザーとして、開発中の全システムを俯瞰し、多角的な角度から適切な助言・コンサルティングを行うこと。",
+    customInstruction: "共通部品および技術検証（音声認識、音声合成、Gemini APIテスト、共通ユーティリティ等）の専属エンジニアとして対応すること。他のプログラムへの再利用性とコードの独立性を維持すること。",
     files: "",
     tokensWeek: 0,
     tokensMonth: 0,
@@ -256,6 +256,7 @@ let accountsData = createInitialAccounts();
 let programsData = defaultPrograms;
 let knowledgeLogsData = [];
 let dailyProgUsageData = {};
+let tokenTransactionLogsData = []; // 🧾 直近トークン増分レシートログ
 let systemInstructionTemplate = defaultCommonSystemInstruction;
 let selectedSysinstProgId = "prog_1";
 let apiConfig = {
@@ -286,6 +287,44 @@ function escapeHtml(str) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+function safeParseJson(rawText) {
+  if (!rawText) return null;
+  let text = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    text = text.substring(firstBrace, lastBrace + 1);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (err1) {
+    try {
+      const sanitized = text.replace(/[\r\n]+/g, '\\n');
+      return JSON.parse(sanitized);
+    } catch (err2) {
+      console.warn("safeParseJson failed:", err1, "RawText:", rawText);
+      return null;
+    }
+  }
+}
+
+// リポジトリ名入力値の完全正規化（URL形式や前後の空白・.gitを自動除去して owner/repo に整流化）
+function cleanRepoFullName(rawStr) {
+  if (!rawStr) return "";
+  let clean = rawStr.trim();
+  clean = clean.replace(/^https?:\/\/github\.com\//i, '');
+  clean = clean.replace(/^git@github\.com:/i, '');
+  clean = clean.replace(/\.git$/i, '');
+  clean = clean.replace(/^\/+|\/+$/g, '');
+  const parts = clean.split('/');
+  if (parts.length >= 2) {
+    return `${parts[0].trim()}/${parts[1].trim()}`;
+  }
+  return clean;
 }
 
 function getPureJstDateString(epochMs) {
@@ -424,6 +463,7 @@ function resolveCanonicalProgram(item) {
   return programsData.find(p => p.id === "prog_10") || programsData[0];
 }
 
+// 🛡️ 履歴・プログラム同期および【99番安全削除 ＆ 10番統合 ＆ 未分類タスクのゼロクリア】エンジン
 function cleanupAndMigrateSaveHistory() {
   let hasChanges = false;
 
@@ -437,6 +477,68 @@ function cleanupAndMigrateSaveHistory() {
     chrome.storage.local.set({ programs: programsData });
     return;
   }
+
+  // === 🧹 【99_共通部品・ツール群】の検出と安全マイグレーション ===
+  const target99Index = programsData.findIndex(p => 
+    p.name.includes("99_共通部品") || 
+    p.name.startsWith("99_") || 
+    (p.name.includes("共通部品") && p.id !== "prog_10" && p.id.startsWith("prog_17"))
+  );
+
+  let target99Id = null;
+  if (target99Index !== -1) {
+    target99Id = programsData[target99Index].id;
+    programsData.splice(target99Index, 1);
+    hasChanges = true;
+  }
+
+  let prog10 = programsData.find(p => p.id === "prog_10");
+  if (!prog10) {
+    prog10 = JSON.parse(JSON.stringify(defaultPrograms[9]));
+    programsData.push(prog10);
+    hasChanges = true;
+  }
+
+  // === 📊 日次集計データ（dailyProgUsage）のクリーンアップ ===
+  if (dailyProgUsageData && typeof dailyProgUsageData === "object") {
+    let usageChanged = false;
+    Object.keys(dailyProgUsageData).forEach(dateKey => {
+      const usageForDate = dailyProgUsageData[dateKey];
+      if (usageForDate && typeof usageForDate === "object") {
+        if (target99Id && usageForDate[target99Id]) {
+          const val99 = usageForDate[target99Id] || 0;
+          usageForDate["prog_10"] = (usageForDate["prog_10"] || 0) + val99;
+          delete usageForDate[target99Id];
+          usageChanged = true;
+        }
+        if (usageForDate["prog_unassigned"]) {
+          delete usageForDate["prog_unassigned"];
+          usageChanged = true;
+        }
+      }
+    });
+
+    if (usageChanged) {
+      chrome.storage.local.set({ dailyProgUsage: dailyProgUsageData });
+    }
+  }
+
+  for (let i = 1; i <= 4; i++) {
+    const acc = accountsData[i];
+    if (acc && target99Id && acc.currentProgramId === target99Id) {
+      acc.currentProgramId = "prog_10";
+      hasChanges = true;
+    }
+  }
+
+  let knowledgeUpdated = false;
+  knowledgeLogsData.forEach(log => {
+    if (target99Id && log.programId === target99Id) {
+      log.programId = "prog_10";
+      log.programName = prog10.name;
+      knowledgeUpdated = true;
+    }
+  });
 
   const oldIdToCanonicalIdMap = {};
 
@@ -466,7 +568,6 @@ function cleanupAndMigrateSaveHistory() {
       if (!Array.isArray(current.saveHistory)) { current.saveHistory = dp.saveHistory || []; hasChanges = true; }
       if (!Array.isArray(current.enhancePlans)) { current.enhancePlans = dp.enhancePlans || []; hasChanges = true; }
 
-      // 🛡️ B案：勝手なバージョン昇格を撤廃し、確定したGitHubセーブ履歴の最新と厳格同期
       if (current.saveHistory && current.saveHistory.length > 0) {
         const latestSaved = current.saveHistory[0].version;
         if (latestSaved && current.version !== latestSaved) {
@@ -477,7 +578,6 @@ function cleanupAndMigrateSaveHistory() {
     }
   });
 
-  let knowledgeUpdated = false;
   knowledgeLogsData.forEach(log => {
     if (oldIdToCanonicalIdMap[log.programId]) {
       log.programId = oldIdToCanonicalIdMap[log.programId];
@@ -505,27 +605,6 @@ function cleanupAndMigrateSaveHistory() {
         acc.currentProgramId = oldIdToCanonicalIdMap[acc.currentProgramId];
         hasChanges = true;
       }
-    }
-  }
-
-  if (dailyProgUsageData && typeof dailyProgUsageData === "object") {
-    let usageUpdated = false;
-    Object.keys(dailyProgUsageData).forEach(dateKey => {
-      const usageForDate = dailyProgUsageData[dateKey];
-      if (usageForDate && typeof usageForDate === "object") {
-        Object.keys(usageForDate).forEach(recordedProgId => {
-          if (oldIdToCanonicalIdMap[recordedProgId]) {
-            const canonicalId = oldIdToCanonicalIdMap[recordedProgId];
-            const tkValue = usageForDate[recordedProgId] || 0;
-            usageForDate[canonicalId] = (usageForDate[canonicalId] || 0) + tkValue;
-            delete usageForDate[recordedProgId];
-            usageUpdated = true;
-          }
-        });
-      }
-    });
-    if (usageUpdated) {
-      chrome.storage.local.set({ dailyProgUsage: dailyProgUsageData });
     }
   }
 
@@ -590,6 +669,208 @@ function calculateAggregatedTokens() {
   return { totals: progTotals, desc: descText };
 }
 
+// === 💾 データ保護・完全バックアップ＆復元（エクスポート / インポート） ===
+function exportFullBackupData() {
+  chrome.storage.local.get(null, (allData) => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const filename = `studio_manager_backup_${y}-${m}-${d}.json`;
+
+    const blob = new Blob([JSON.stringify(allData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+}
+
+function importFullBackupData(jsonString) {
+  try {
+    const data = JSON.parse(jsonString);
+    if (!data || typeof data !== "object") {
+      throw new Error("バックアップファイルの形式が不正です。");
+    }
+
+    if (!confirm("⚠️ 【確認】現在のすべてのデータが、選択したバックアップファイルの内容で上書きされます。\n\n復元を実行してもよろしいですか？")) {
+      return;
+    }
+
+    chrome.storage.local.clear(() => {
+      chrome.storage.local.set(data, () => {
+        alert("🎉 バックアップファイルから全データを完全復元しました！\n画面を再読み込みして最新状態を反映します。");
+        location.reload();
+      });
+    });
+  } catch (err) {
+    alert(`❌ 復元に失敗しました: ${err.message}`);
+  }
+}
+
+// === 🐙 GitHubから全プログラムのバージョン・履歴を一括自動同期復元（完全堅牢版） ===
+async function restoreAllProgramsFromGitHub() {
+  const tokenInput = document.getElementById("githubToken");
+  const currentToken = (tokenInput && tokenInput.value.trim()) || apiConfig.githubToken;
+
+  if (!currentToken) {
+    throw new Error("GitHub Tokenが未設定です。「⚙️ 設定」タブの共通API設定欄にトークンを入力してください。");
+  }
+  apiConfig.githubToken = currentToken;
+
+  // 1. 画面テーブル上の入力欄から、最新のプログラム名・リポジトリ名を直接取り込んで即時反映
+  const masterRows = document.querySelectorAll("#masterTableBody tr");
+  masterRows.forEach(row => {
+    const nameInput = row.querySelector(".master-name");
+    const repoInput = row.querySelector(".master-repo");
+    const progId = nameInput ? nameInput.dataset.id : null;
+    if (progId) {
+      const p = programsData.find(item => item.id === progId);
+      if (p) {
+        if (nameInput && nameInput.value.trim()) p.name = nameInput.value.trim();
+        if (repoInput) p.githubRepo = cleanRepoFullName(repoInput.value);
+      }
+    }
+  });
+
+  const reportLines = [];
+  let successCount = 0;
+
+  for (const prog of programsData) {
+    let repoFullName = cleanRepoFullName(prog.githubRepo);
+
+    if (!repoFullName) {
+      reportLines.push(`⚪ 【${prog.name}】: リポジトリ未設定のためスキップ`);
+      continue;
+    }
+
+    prog.githubRepo = repoFullName;
+    const [owner, repo] = repoFullName.split("/");
+
+    if (!owner || !repo) {
+      reportLines.push(`⚠️ 【${prog.name}】: リポジトリ名形式が不正 (${repoFullName})`);
+      continue;
+    }
+
+    let restored = false;
+
+    // ① README.md からの Change Log 解析
+    let readmeText = await fetchOldFileFromGitHub(repoFullName, "README.md");
+    if (!readmeText) readmeText = await fetchOldFileFromGitHub(repoFullName, "readme.md");
+
+    if (readmeText && readmeText.includes("## 📝 更新履歴 (Change Log)")) {
+      const parsedHistory = parseChangeLogFromReadme(readmeText);
+      if (parsedHistory.length > 0) {
+        prog.saveHistory = parsedHistory;
+        prog.version = parsedHistory[0].version || prog.version;
+        prog.lastCommit = parsedHistory[0].commitMsg || prog.lastCommit;
+        reportLines.push(`✅ 【${prog.name}】: READMEから復元 ➜ ${prog.version} (履歴 ${parsedHistory.length}件)`);
+        successCount++;
+        restored = true;
+      }
+    }
+
+    // ② READMEに履歴がない場合は、Gitコミットログ（最新30件）からバージョンと履歴を再構築
+    if (!restored) {
+      try {
+        const commitsUrl = `https://api.github.com/repos/${owner}/${repo}/commits?per_page=30`;
+        const commitsRes = await fetch(commitsUrl, {
+          headers: {
+            "Authorization": `token ${apiConfig.githubToken}`,
+            "Accept": "application/vnd.github.v3+json"
+          }
+        });
+
+        if (commitsRes.ok) {
+          const commits = await commitsRes.json();
+          if (Array.isArray(commits) && commits.length > 0) {
+            const rebuiltHistory = [];
+            let latestFoundVer = null;
+
+            for (const c of commits) {
+              const rawMsg = c.commit?.message || "";
+              const firstLine = rawMsg.split("\n")[0] || "";
+              const bodyLines = rawMsg.split("\n").slice(1).join("\n").trim();
+              const verMatch = firstLine.match(/v\d+\.\d+(\.\d+)?/i);
+              const verStr = verMatch ? verMatch[0] : (latestFoundVer || "v1.0.0");
+              if (verMatch && !latestFoundVer) latestFoundVer = verMatch[0];
+
+              const d = new Date(c.commit?.author?.date || Date.now());
+              const dStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+              rebuiltHistory.push({
+                version: verStr,
+                timestamp: d.getTime(),
+                dateStr: dStr,
+                commitMsg: firstLine,
+                summary: bodyLines || firstLine
+              });
+            }
+
+            prog.saveHistory = rebuiltHistory;
+            prog.version = latestFoundVer || rebuiltHistory[0].version || prog.version || "v1.0.0";
+            prog.lastCommit = rebuiltHistory[0].commitMsg;
+            reportLines.push(`✅ 【${prog.name}】: コミットログから復元 ➜ ${prog.version} (履歴 ${rebuiltHistory.length}件)`);
+            successCount++;
+            restored = true;
+          } else {
+            reportLines.push(`⚠️ 【${prog.name}】: リポジトリ (${repoFullName}) にコミットがありません`);
+          }
+        } else {
+          reportLines.push(`❌ 【${prog.name}】: GitHubアクセス失敗 (HTTP ${commitsRes.status}: ${repoFullName})`);
+        }
+      } catch (err) {
+        reportLines.push(`❌ 【${prog.name}】: 通信エラー (${err.message})`);
+      }
+    }
+  }
+
+  // ストレージへの完全保存と全UIコンポーネントの強制再描画
+  chrome.storage.local.set({ programs: programsData, apiConfig });
+  updateAppVersionBadge();
+  renderProgramDashboard();
+  renderMasterSettings();
+  if (typeof setupCards === "function") setupCards();
+  if (typeof updateCardValues === "function") updateCardValues();
+
+  // 完全なレポートダイアログを表示
+  const summaryMsg = `🎉 【GitHub同期復元レポート】\n対象プログラム: 全${programsData.length}件中、${successCount}件の復元に成功しました。\n\n` + reportLines.join("\n");
+  alert(summaryMsg);
+}
+
+function parseChangeLogFromReadme(readmeContent) {
+  const history = [];
+  const logSection = readmeContent.split("## 📝 更新履歴 (Change Log)")[1];
+  if (!logSection) return history;
+
+  const entries = logSection.split("---");
+  for (const entry of entries) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+
+    const headerMatch = trimmed.match(/###\s*\[([^\]]+)\]\s*\[([^\]]+)\]\s*([^\n]+)/);
+    if (headerMatch) {
+      const dateStr = headerMatch[1].trim();
+      const version = headerMatch[2].trim();
+      const commitMsg = headerMatch[3].trim();
+      const summaryPart = trimmed.substring(headerMatch[0].length).trim();
+
+      history.push({
+        version: version,
+        timestamp: Date.now(),
+        dateStr: dateStr,
+        commitMsg: commitMsg,
+        summary: summaryPart
+      });
+    }
+  }
+  return history;
+}
+
 // === 💬 アイデア壁打ち（第1段階の頭の整理：自然言語要件化アシスタント） ===
 async function runInitialSparring(prog, noteText) {
   const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
@@ -612,7 +893,7 @@ ${noteText}
 2. プログラミング用語やシステム用語を使わず、ユーザーが体験する「目的」と「使い勝手の要望」だけを整理してください。
 3. タイトルは40文字以内で、何をする機能かがひと目でわかる日本語にしてください。
 4. 難易度や工数見積もりは一切出力しないでください。
-5. 以下のJSONフォーマットのみをプレーンテキストで出力してください（Markdownの\`\`\`json記号は含めないでください）。
+5. 以下のJSONフォーマットのみを出力してください。
 
 {
   "suggestedTitle": "40文字以内のスッキリした計画タイトル",
@@ -623,7 +904,10 @@ ${noteText}
 
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2 }
+    generationConfig: {
+      temperature: 0.2,
+      responseMimeType: "application/json"
+    }
   };
 
   const res = await fetch(url, {
@@ -638,18 +922,18 @@ ${noteText}
   }
 
   const data = await res.json();
-  let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-  rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+  const parsed = safeParseJson(rawText);
 
-  try {
-    return JSON.parse(rawText);
-  } catch (e) {
-    return {
-      suggestedTitle: noteText.substring(0, 35),
-      targetVer: nextMinor,
-      aiMessage: `💡 要約: ${noteText.substring(0, 50)}...\n\n🎯 今回やるべきことと見送ることを整理して計画へ昇格しましょう！`
-    };
+  if (parsed && parsed.suggestedTitle && parsed.aiMessage) {
+    return parsed;
   }
+
+  return {
+    suggestedTitle: noteText.substring(0, 35),
+    targetVer: nextMinor,
+    aiMessage: `💡 要約: ${noteText.substring(0, 50)}...\n\n🎯 今回やるべきことと見送ることを整理して計画へ昇格しましょう！`
+  };
 }
 
 async function continueSparringChat(prog, userReply) {
@@ -663,7 +947,7 @@ async function continueSparringChat(prog, userReply) {
 ${userReply}
 
 【厳格な指示】
-以下のJSONフォーマットのみをプレーンテキストで出力してください（Markdownの\`\`\`json記号は含めないでください）。
+以下のJSONフォーマットのみを出力してください。
 
 {
   "updatedTitle": "調整後の計画タイトル（変更不要なら現在のタイトル）",
@@ -674,7 +958,10 @@ ${userReply}
 
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2 }
+    generationConfig: {
+      temperature: 0.2,
+      responseMimeType: "application/json"
+    }
   };
 
   const res = await fetch(url, {
@@ -689,18 +976,18 @@ ${userReply}
   }
 
   const data = await res.json();
-  let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-  rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+  const parsed = safeParseJson(rawText);
 
-  try {
-    return JSON.parse(rawText);
-  } catch (e) {
-    return {
-      updatedTitle: null,
-      updatedVer: null,
-      aiMessage: rawText || "了解しました！方針を更新しました。"
-    };
+  if (parsed) {
+    return parsed;
   }
+
+  return {
+    updatedTitle: null,
+    updatedVer: null,
+    aiMessage: rawText || "了解しました！方針を更新しました。"
+  };
 }
 
 // === ✨ AIアイデア交通整理・一括仕分け（Inboxメモの自動トリアージ） ===
@@ -736,7 +1023,7 @@ ${notesListText}
 ${plansListText}
 
 【厳格な指示】
-以下のJSONフォーマットのみをプレーンテキストで出力してください（Markdownの\`\`\`json記号は含めないでください）。
+以下のJSONフォーマットのみを出力してください。
 
 {
   "suggestions": [
@@ -763,7 +1050,10 @@ ${plansListText}
 
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2 }
+    generationConfig: {
+      temperature: 0.2,
+      responseMimeType: "application/json"
+    }
   };
 
   const res = await fetch(url, {
@@ -778,29 +1068,28 @@ ${plansListText}
   }
 
   const data = await res.json();
-  let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-  rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+  const parsed = safeParseJson(rawText);
 
-  try {
-    return JSON.parse(rawText);
-  } catch (e) {
-    // 安全フォールバック
-    const firstNote = notes[0];
-    return {
-      suggestions: [
-        {
-          action: "create",
-          noteIds: [firstNote.id],
-          verType: "minor",
-          targetVer: calculateNextVersion(currentVer, "minor"),
-          title: firstNote.text.substring(0, 30),
-          reason: "単独の機能改善として新規計画化を推奨します。",
-          promptDraft: `■ 実装の目的:\n${firstNote.text.substring(0, 30)}\n\n■ 具体的な実装要件:\n・${firstNote.text}`,
-          costEstimate: "工数小"
-        }
-      ]
-    };
+  if (parsed && Array.isArray(parsed.suggestions)) {
+    return parsed;
   }
+
+  const firstNote = notes[0];
+  return {
+    suggestions: [
+      {
+        action: "create",
+        noteIds: [firstNote.id],
+        verType: "minor",
+        targetVer: calculateNextVersion(currentVer, "minor"),
+        title: firstNote.text.substring(0, 30),
+        reason: "単独の機能改善として新規計画化を推奨します。",
+        promptDraft: `■ 実装の目的:\n${firstNote.text.substring(0, 30)}\n\n■ 具体的な実装要件:\n・${firstNote.text}`,
+        costEstimate: "工数小"
+      }
+    ]
+  };
 }
 
 // === ✨ AIでブレークダウン＆プロンプト自動起草（01〜10番完全統一・自然言語要件化） ===
@@ -856,7 +1145,7 @@ async function generateBreakdownPromptWithAI(planTitle, targetVer = "次期版")
   return { prompt: text, advice: "" };
 }
 
-// === 🤖 AI着手優先度チェック（要求・仕様レベルの統廃合エンジン） ===
+// === 🤖 AI着手優先度チェック（タイトル明記 ＆ 美しい構造化カード出力エンジン） ===
 async function checkPlansPriorityWithAI(prog, plans) {
   if (!apiConfig.geminiApiKey) {
     throw new Error("Gemini APIキーが設定されていません。「⚙️ 設定」タブでAPIキーを設定してください。");
@@ -865,7 +1154,7 @@ async function checkPlansPriorityWithAI(prog, plans) {
   const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
 
-  const plansListText = plans.map((p, idx) => `[計画 ${idx + 1}] [${p.targetVer || '次期版'}] ${p.title} (種別: ${p.verType === 'patch' ? 'バグ修正' : '機能追加'})\n要件メモ: ${p.prompt || p.aiAdvice || 'なし'}`).join("\n\n");
+  const plansListText = plans.map((p, idx) => `[#${idx + 1}] [${p.targetVer || '次期版'}] タイトル:「${p.title}」 (種別: ${p.verType === 'patch' ? 'バグ修正' : '機能追加'})\n要件メモ: ${p.prompt || p.aiAdvice || 'なし'}`).join("\n\n");
 
   const prompt = `あなたはプロのシニアアジャイルプロダクトマネージャーです。
 現在開発中のプログラム「${prog.name}」において、以下の複数のエンハンス計画（未着手）がストックされています。
@@ -875,26 +1164,29 @@ async function checkPlansPriorityWithAI(prog, plans) {
 ③ 盛り込みすぎの計画に対する「小分け提案（分割）」
 の3本柱でプロのアドバイスを提供してください。
 
-【プログラム名】: ${prog.name} (現在稼働Ver: ${prog.version || 'v1.0.0'})
+【対象プログラム】: ${prog.name} (稼働Ver: ${prog.version || 'v1.0.0'})
 【固有設計方針】: ${prog.customInstruction || 'なし'}
-【ストックされている計画一覧】
+
+【診断対象の計画一覧】
 ${plansListText}
 
-【厳格な指示】
-HTMLタグやMarkdown装飾記号は一切使わず、以下の日本語フォーマットで出力してください。
+【厳格な指示（絶対遵守）】
+1. 回答内では、単に「計画1」などと番号だけで呼ばず、必ず【#番号「タイトル名」】の形式でタイトルを明記してください（例: 【最優先】#1「メニュー追加・体系整理」）。
+2. HTMLタグやMarkdown装飾記号は一切使わず、以下の日本語フォーマットに従ってプレーンテキストで出力してください。
 
-■ 💡 推奨着手順序と明確な理由:
-1. 【最優先】[計画番号] 理由（不具合の早期解消、基盤機能の先行、手戻りの少なさなど納得できる根拠）
-2. 【第2順位】[計画番号] 理由
-...
+■ 💡 推奨着手順序と明確な理由
+1. 【最優先】#番号「タイトル名」: （不具合の早期解消、基盤機能の先行、手戻りの少なさなど納得できる根拠を2〜3行）
+2. 【第2順位】#番号「タイトル名」: （根拠）
+3. 【第3順位】#番号「タイトル名」: （根拠）
 
-■ 📦 まとめ提案（パッケージ化・セット作業推奨）:
-・（同じ画面領域や関連する機能スコープがあれば、「計画Xと計画Yは同一体験に関わるためセットで着手するのが効率的です」といった提案。なければ「特になし。1件ずつ独立して安全に着手可能です」）
+■ 📦 まとめ提案（パッケージ化・セット作業推奨）
+・（関連する計画があれば「#1と#2は同一画面に関わるためセットで着手するのが効率的です」等。特になければ「特になし。1件ずつ独立して安全に着手可能です」）
 
-■ ✂️ 小分け提案（分割・段階リリース推奨）:
-・（要望が大きくリスクが高い計画があれば、「計画Zは一度にやらず、まず〇〇だけ先行してパッチ版にし、残りは次回に回すのが安全です」といった分割提案。なければ「特になし。現在の粒度で適切です」）
+■ ✂️ 小分け提案（分割・段階リリース推奨）
+・（スコープが大きくリスクが高い計画があれば「#Xは一度にやらず、まず〇〇だけ先行してパッチ版にし、残りは次回に回すのが安全です」等。特になければ「特になし。現在の粒度で適切です」）
 
-■ ⚠️ デグレード防止・手戻り回避の要点（2〜3行）
+■ ⚠️ デグレード防止・手戻り回避の要点
+・（開発時に特に注意すべきデグレード防止のコツを2行程度）
 `;
 
   const body = {
@@ -914,16 +1206,90 @@ HTMLタグやMarkdown装飾記号は一切使わず、以下の日本語フォ�
   }
 
   const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "診断結果を取得できませんでした。";
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+
+  return formatPriorityResultToHtml(rawText);
 }
 
-// === 🛡️ GitHub事前チェック（プリフライト診断：代表ファイル1箇所集中スマート検証） ===
+function formatPriorityResultToHtml(rawText) {
+  if (!rawText) return `<div class="priority-section-card">診断結果が取得できませんでした。</div>`;
+
+  const rankingMatch = rawText.match(/■\s*💡\s*推奨着手順序[^\n]*([\s\S]*?)(?=■\s*📦\s*まとめ提案|$)/i);
+  const bundleMatch = rawText.match(/■\s*📦\s*まとめ提案[^\n]*([\s\S]*?)(?=■\s*✂️\s*小分け提案|$)/i);
+  const splitMatch = rawText.match(/■\s*✂️\s*小分け提案[^\n]*([\s\S]*?)(?=■\s*⚠️\s*デグレード防止|$)/i);
+  const warningMatch = rawText.match(/■\s*⚠️\s*デグレード防止[^\n]*([\s\S]*?)$/i);
+
+  const rankingText = rankingMatch ? rankingMatch[1].trim() : "";
+  const bundleText = bundleMatch ? bundleMatch[1].trim() : "";
+  const splitText = splitMatch ? splitMatch[1].trim() : "";
+  const warningText = warningMatch ? warningMatch[1].trim() : "";
+
+  const rankingRows = rankingText.split("\n").filter(l => l.trim().length > 0).map((line, idx) => {
+    let badgeClass = "slate";
+    let badgeLabel = `#${idx + 1}`;
+    if (line.includes("最優先") || idx === 0) {
+      badgeClass = "gold";
+      badgeLabel = "🥇 最優先";
+    } else if (line.includes("第2順位") || idx === 1) {
+      badgeClass = "blue";
+      badgeLabel = "🥈 第2順位";
+    } else if (line.includes("第3順位") || idx === 2) {
+      badgeClass = "slate";
+      badgeLabel = "🥉 第3順位";
+    }
+
+    const cleanLine = line.replace(/^\d+[\.\:]\s*【[^】]+】\s*/, '').trim();
+    return `
+      <div class="priority-step-row">
+        <span class="priority-step-badge ${badgeClass}">${badgeLabel}</span>
+        <div style="flex: 1; color: #f8fafc;">${escapeHtml(cleanLine || line)}</div>
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div class="priority-section-card ranking">
+      <div class="priority-section-header ranking">
+        <span>🥇 推奨着手順序と明確な根拠</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        ${rankingRows || `<div style="font-size: 12px; color: #cbd5e1;">${escapeHtml(rankingText)}</div>`}
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+      <div class="priority-section-card bundle">
+        <div class="priority-section-header bundle">
+          <span>📦 まとめ提案（セット作業）</span>
+        </div>
+        <div style="font-size: 12px; line-height: 1.55; color: #cbd5e1; white-space: pre-wrap;">${escapeHtml(bundleText || '特になし')}</div>
+      </div>
+
+      <div class="priority-section-card split">
+        <div class="priority-section-header split">
+          <span>✂️ 小分け提案（段階リリース）</span>
+        </div>
+        <div style="font-size: 12px; line-height: 1.55; color: #cbd5e1; white-space: pre-wrap;">${escapeHtml(splitText || '特になし')}</div>
+      </div>
+    </div>
+
+    ${warningText ? `
+      <div class="priority-section-card warning">
+        <div class="priority-section-header warning">
+          <span>⚠️ デグレード防止・手戻り回避の要点</span>
+        </div>
+        <div style="font-size: 12px; line-height: 1.55; color: #fed7aa; white-space: pre-wrap;">${escapeHtml(warningText)}</div>
+      </div>
+    ` : ''}
+  `;
+}
+
+// === 🛡️ GitHub事前チェック（プリフライト診断） ===
 async function runPreflightInspection(prog, relVersion, files) {
   const issues = [];
   const fileNames = files.map(f => f.name);
   const cleanTargetVer = relVersion.replace(/^v/i, "");
 
-  // 1. Web公開プログラムの場合の index.html 必須チェック
   if (prog.isWebPublish) {
     const hasIndexHtml = fileNames.some(name => name.toLowerCase() === "index.html");
     if (!hasIndexHtml) {
@@ -936,7 +1302,6 @@ async function runPreflightInspection(prog, relVersion, files) {
     }
   }
 
-  // 2. 不正文字（全角・空白）スキャン
   files.forEach(f => {
     const hasFullWidth = /[^\u0000-\u007F]/.test(f.name);
     const hasSpace = /\s/.test(f.name);
@@ -950,10 +1315,7 @@ async function runPreflightInspection(prog, relVersion, files) {
     }
   });
 
-  // 3. 🏛️ 【代表ファイル1箇所集中】バージョンのスマート照合
-  // プログラム種別ごとの代表ファイルのみを対象にバージョン表記を検査する
   if (prog.id === "prog_1") {
-    // Chrome拡張機能 ➜ manifest.json のみ検査
     const manifestFile = files.find(f => f.name.toLowerCase() === "manifest.json");
     if (manifestFile && !manifestFile.isBase64 && manifestFile.content) {
       const match = manifestFile.content.match(/"version"\s*:\s*"([^"]+)"/);
@@ -970,7 +1332,6 @@ async function runPreflightInspection(prog, relVersion, files) {
       }
     }
   } else if (prog.isWebPublish) {
-    // Webアプリケーション ➜ index.html 内のバージョン表示を検査（存在する場合）
     const indexFile = files.find(f => f.name.toLowerCase() === "index.html");
     if (indexFile && !indexFile.isBase64 && indexFile.content) {
       const verMatch = indexFile.content.match(/(?:id|class)=["'][^"']*(?:ver|version)[^"']*["'][^>]*>v?([0-9.]+)/i);
@@ -988,7 +1349,6 @@ async function runPreflightInspection(prog, relVersion, files) {
     }
   }
 
-  // 4. 大容量ファイル（25MB超）警告
   files.forEach(f => {
     const mbSize = (f.byteSize || 0) / (1024 * 1024);
     if (mbSize > 25) {
@@ -1241,7 +1601,8 @@ async function analyzeDiffAndGenerateSummary() {
 
 async function fetchOldFileFromGitHub(repoFullName, path) {
   if (!repoFullName || !path) return null;
-  const [owner, repo] = repoFullName.split("/");
+  const cleanRepo = cleanRepoFullName(repoFullName);
+  const [owner, repo] = cleanRepo.split("/");
   if (!owner || !repo) return null;
 
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
@@ -1370,22 +1731,23 @@ async function executeGitHubPush() {
     return;
   }
 
-  const [owner, repo] = repoInputVal.split("/");
+  const cleanRepo = cleanRepoFullName(repoInputVal);
+  const [owner, repo] = cleanRepo.split("/");
   if (!owner || !repo) {
-    alert("リポジトリ名の形式が不正です（例: user/repo）。");
+    alert("リポジトリ名の形式が不正です（例: user/repo または https://github.com/user/repo）。");
     return;
   }
 
   if (currentTargetProg) {
     const issues = await runPreflightInspection(currentTargetProg, relVersion, loadedLocalFiles);
     if (issues.length > 0) {
-      pendingPushPayload = { owner, repo, repoInputVal, relVersion, commitMsg, summary };
+      pendingPushPayload = { owner, repo, repoInputVal: cleanRepo, relVersion, commitMsg, summary };
       openPreflightModal(issues);
       return;
     }
   }
 
-  proceedGitHubPush(owner, repo, repoInputVal, relVersion, commitMsg, summary);
+  proceedGitHubPush(owner, repo, cleanRepo, relVersion, commitMsg, summary);
 }
 
 async function proceedGitHubPush(owner, repo, repoInputVal, relVersion, commitMsg, summary) {
@@ -1580,7 +1942,7 @@ function initNavigation() {
         const targetProg = programsData.find(p => p.id === progId);
         if (targetProg) {
           targetProg.name = nameInput.value.trim() || targetProg.name;
-          targetProg.githubRepo = repoInput.value.trim();
+          targetProg.githubRepo = cleanRepoFullName(repoInput.value);
           targetProg.isWebPublish = isWebInput.checked;
         }
       }
@@ -1636,4 +1998,152 @@ function initNavigation() {
       renderKnowledgeList();
     });
   }
+}
+
+// === システム全体のブートストラップ ＆ 変更監視エンジン ===
+function bootstrap() {
+  console.log(`🚀 Studioマネージャー v1.4.2 起動完了`);
+
+  initNavigation();
+  initModalHandlers();
+  initPreflightModalHandlers();
+  initEnhanceModalHandlers();
+  initHistoryModalHandlers();
+  initTriageModalHandlers();
+  initSparringModalHandlers();
+  initTokenCorrectModalHandlers();
+  initBackupAndRestoreHandlers();
+  initReceiptAccordion(); // 🧾 レシートアコーディオンの初期化
+  initConciergeHandlers();
+  updateCountdown();
+
+  loadFullExtensionSourceCode();
+
+  chrome.storage.local.get(["accounts", "programs", "knowledgeLogs", "dailyProgUsage", "tokenTransactionLogs", "systemInstructionTemplate", "apiConfig"], (res) => {
+    if (res.programs && res.programs.length > 0) programsData = res.programs;
+    if (res.knowledgeLogs) knowledgeLogsData = res.knowledgeLogs;
+    if (res.dailyProgUsage) dailyProgUsageData = res.dailyProgUsage;
+    if (res.tokenTransactionLogs) tokenTransactionLogsData = res.tokenTransactionLogs; // 🧾 レシートログの読み込み
+    
+    const currentStoredTemplate = res.systemInstructionTemplate || "";
+    const isOldTemplate = (
+      !currentStoredTemplate ||
+      currentStoredTemplate.includes("Studioマネージャーの専任プロジェクトリーダー") ||
+      !currentStoredTemplate.includes("【Gemini API連携モデルの厳格固定】")
+    );
+
+    if (isOldTemplate) {
+      systemInstructionTemplate = defaultCommonSystemInstruction;
+      chrome.storage.local.set({ systemInstructionTemplate });
+    } else {
+      systemInstructionTemplate = currentStoredTemplate;
+    }
+
+    if (res.apiConfig) apiConfig = Object.assign(apiConfig, res.apiConfig);
+    if (res.accounts) {
+      for (let i = 1; i <= 4; i++) {
+        if (res.accounts[i]) {
+          accountsData[i] = Object.assign(accountsData[i] || {}, res.accounts[i]);
+        }
+      }
+    }
+
+    cleanupAndMigrateSaveHistory();
+
+    isDataLoaded = true;
+    updateActiveModelBadge();
+    updateAppVersionBadge();
+    setupCards();
+    renderProgramDashboard();
+    renderMasterSettings();
+
+    setInterval(updateCountdown, 1000);
+    setInterval(syncBackgroundStats, 2000);
+  });
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "local") {
+      if (changes.apiConfig) {
+        apiConfig = Object.assign(apiConfig, changes.apiConfig.newValue || {});
+        updateActiveModelBadge();
+      }
+      if (changes.systemInstructionTemplate) {
+        systemInstructionTemplate = changes.systemInstructionTemplate.newValue || defaultCommonSystemInstruction;
+      }
+      if (changes.accounts) {
+        const newAccounts = changes.accounts.newValue;
+        if (newAccounts) {
+          for (let i = 1; i <= 4; i++) {
+            if (newAccounts[i]) {
+              accountsData[i].tokens = newAccounts[i].tokens;
+              accountsData[i].currentChatTokens = newAccounts[i].currentChatTokens;
+              accountsData[i].meterLevel = newAccounts[i].meterLevel;
+              accountsData[i].statusMode = newAccounts[i].statusMode;
+              accountsData[i].isRateLimited = newAccounts[i].isRateLimited;
+              accountsData[i].hasError = newAccounts[i].hasError;
+              accountsData[i].startTime = newAccounts[i].startTime;
+              accountsData[i].tabId = newAccounts[i].tabId;
+              accountsData[i].currentProgramId = newAccounts[i].currentProgramId;
+            }
+          }
+          updateCardValues();
+          updateProgramWorkBadgesOnly();
+        }
+      }
+      if (changes.dailyProgUsage) {
+        dailyProgUsageData = changes.dailyProgUsage.newValue || {};
+        renderProgramDashboard();
+      }
+      if (changes.tokenTransactionLogs) {
+        tokenTransactionLogsData = changes.tokenTransactionLogs.newValue || [];
+        if (typeof renderTokenReceiptLogs === "function") renderTokenReceiptLogs();
+      }
+      if (changes.knowledgeLogs) {
+        knowledgeLogsData = changes.knowledgeLogs.newValue || [];
+        renderKnowledgeFilterTabs();
+        renderKnowledgeList();
+      }
+      if (changes.programs) {
+        programsData = changes.programs.newValue || [];
+        updateAppVersionBadge();
+        renderProgramDashboard();
+      }
+    }
+  });
+}
+
+function syncBackgroundStats() {
+  chrome.storage.local.get(["accounts", "dailyProgUsage", "tokenTransactionLogs"], (res) => {
+    if (res.accounts) {
+      for (let i = 1; i <= 4; i++) {
+        const bgAcc = res.accounts[i];
+        if (bgAcc) {
+          accountsData[i].tokens = bgAcc.tokens;
+          accountsData[i].currentChatTokens = bgAcc.currentChatTokens;
+          accountsData[i].meterLevel = bgAcc.meterLevel;
+          accountsData[i].statusMode = bgAcc.statusMode;
+          accountsData[i].isRateLimited = bgAcc.isRateLimited;
+          accountsData[i].hasError = bgAcc.hasError;
+          accountsData[i].startTime = bgAcc.startTime;
+          accountsData[i].tabId = bgAcc.tabId;
+        }
+      }
+      updateCardValues();
+      updateProgramWorkBadgesOnly();
+    }
+    if (res.dailyProgUsage) {
+      dailyProgUsageData = res.dailyProgUsage;
+    }
+    if (res.tokenTransactionLogs) {
+      tokenTransactionLogsData = res.tokenTransactionLogs;
+      if (typeof renderTokenReceiptLogs === "function") renderTokenReceiptLogs();
+    }
+  });
+}
+
+// 🛡️ 全分割スクリプトおよびDOMツリーの完全ロードを待機して安全に起動
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootstrap);
+} else {
+  bootstrap();
 }
