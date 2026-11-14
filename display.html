@@ -1,4 +1,4 @@
-<!-- [v1.4.1 作業版 Rev.1] アイデア壁打ちモーダルのOverlayクラス名修正による常時露出の解消およびポップアップ表示復旧 -->
+<!-- [v1.4.2 作業版 Rev.3] 直近トークン増分レシート（監査ログ）アコーディオンUIの追加 -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -216,7 +216,7 @@
       margin-top: 4px;
       overflow-y: auto;
       padding-right: 4px;
-      max-height: calc(100vh - 240px);
+      max-height: calc(100vh - 460px);
     }
     .chart-list::-webkit-scrollbar { width: 6px; }
     .chart-list::-webkit-scrollbar-track { background: #0f172a; border-radius: 3px; }
@@ -245,6 +245,107 @@
     .chart-meta { display: flex; justify-content: space-between; font-size: 11.5px; font-weight: 600; }
     .chart-bar-bg { width: 100%; height: 9px; background: #1e293b; border-radius: 5px; overflow: hidden; border: 1px solid #334155; }
     .chart-bar-fill { height: 100%; border-radius: 5px; transition: width 0.4s ease; }
+
+    /* 🧾 【新設】直近トークン増分レシート（監査ログ）アコーディオン */
+    .receipt-section {
+      background: #0f172a;
+      border: 1px solid #1e3a8a;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 8px;
+      flex-shrink: 0;
+      transition: border-color 0.2s;
+    }
+    .receipt-section.open { border-color: #38bdf8; }
+    
+    .receipt-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 9px 12px;
+      background: #0c1a2e;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .receipt-head:hover { background: #172554; }
+    .receipt-head-title {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #93c5fd;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .receipt-count-badge {
+      background: #1e293b;
+      border: 1px solid #475569;
+      color: #cbd5e1;
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 10px;
+    }
+    .receipt-head-actions { display: flex; align-items: center; gap: 8px; }
+    
+    .receipt-body {
+      display: none;
+      padding: 8px 10px;
+      border-top: 1px solid #1e3a8a;
+      background: #090d16;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .receipt-section.open .receipt-body { display: flex; }
+
+    .receipt-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 180px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .receipt-list::-webkit-scrollbar { width: 5px; }
+    .receipt-list::-webkit-scrollbar-track { background: #0f172a; }
+    .receipt-list::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+    .receipt-item {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 5px;
+      padding: 6px 9px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      font-size: 11px;
+      transition: border-color 0.15s;
+    }
+    .receipt-item:hover { border-color: #38bdf8; }
+    .receipt-item.large-warning { border-left: 3px solid #f59e0b; background: #1a1505; }
+    .receipt-item.fuse-blocked { border-left: 3px solid #ef4444; background: #250b0b; }
+    .receipt-item.manual-correct { border-left: 3px solid #10b981; background: #062319; }
+    .receipt-item.system-reset { border-left: 3px solid #8b5cf6; background: #190e2b; }
+
+    .receipt-row-top { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+    .receipt-meta-left { display: flex; align-items: center; gap: 5px; overflow: hidden; }
+    .receipt-time { color: #64748b; font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .receipt-id-tag { background: #1e293b; color: #38bdf8; font-weight: 700; padding: 1px 4px; border-radius: 3px; border: 1px solid #334155; font-size: 10px; white-space: nowrap; }
+    .receipt-prog-name { color: #f8fafc; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    
+    .receipt-delta-badge {
+      font-weight: 800;
+      font-size: 11px;
+      color: #38bdf8;
+      white-space: nowrap;
+      margin-left: auto;
+    }
+    .receipt-delta-badge.large { color: #facc15; }
+    .receipt-delta-badge.minus { color: #ef4444; }
+
+    .receipt-row-bottom { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 10.5px; color: #94a3b8; }
+    .receipt-chat-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .receipt-url-link { color: #38bdf8; text-decoration: none; font-size: 10px; white-space: nowrap; }
+    .receipt-url-link:hover { text-decoration: underline; }
 
     /* 📌 右側：ワイドなプログラム一覧・ロードマップ (突き抜け完全ガード) */
     .programs-manage-section {
@@ -302,7 +403,6 @@
     .prog-card-title-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
     .prog-card-title { font-size: 14px; font-weight: 700; color: #38bdf8; }
     
-    /* 🏷️ バージョンステータスバッジ（正式稼働版 / 動作確認中 / 初回待ち） */
     .prog-version-badge {
       background: #065f46;
       border: 1px solid #10b981;
@@ -399,7 +499,6 @@
     }
     .inbox-section.open .inbox-body-collapsible { display: flex; }
 
-    /* 複数行ゆったり入力対応 */
     .inbox-input-container { display: flex; flex-direction: column; gap: 6px; }
     .inbox-textarea {
       width: 100%;
@@ -544,6 +643,24 @@
     }
     
     .enhance-item-info { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; overflow: hidden; }
+    
+    .plan-index-badge {
+      background: #1e293b;
+      border: 1px solid #475569;
+      color: #94a3b8;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 1px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .enhance-item-wrapper.open .plan-index-badge {
+      background: #0c213b;
+      border-color: #0284c7;
+      color: #38bdf8;
+    }
+
     .target-ver-tag { font-size: 11px; font-weight: 800; padding: 1px 7px; border-radius: 4px; white-space: nowrap; flex-shrink: 0; }
     .target-ver-tag.minor { background: #0c213b; color: #38bdf8; border: 1px solid #0284c7; }
     .target-ver-tag.patch { background: #451a03; color: #facc15; border: 1px solid #eab308; }
@@ -552,7 +669,6 @@
 
     .enhance-item-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
     
-    /* 🚀 時系列順ボタン配置（着手・編集 ➜ セーブ ➜ 削除） */
     .toggle-expand-btn { background: #1e293b; border: 1px solid #475569; color: #cbd5e1; padding: 4px 9px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; transition: 0.15s; }
     .toggle-expand-btn:hover { background: #334155; color: white; border-color: #38bdf8; }
     
@@ -870,6 +986,42 @@
     .api-label { font-size: 11.5px; font-weight: 700; color: #cbd5e1; }
     .api-input { background: #1e293b; border: 1px solid #475569; color: #f8fafc; padding: 7px 10px; border-radius: 6px; font-size: 12px; }
 
+    /* 💾 バックアップ＆復元カード */
+    .backup-card {
+      background: #0f172a;
+      border: 1px solid #38bdf8;
+      border-radius: 10px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0;
+    }
+    .backup-card-title { font-size: 13.5px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
+    .backup-grid-2col {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+      align-items: stretch;
+    }
+    @media (max-width: 900px) { .backup-grid-2col { grid-template-columns: minmax(0, 1fr); } }
+    .backup-action-box {
+      background: #1e293b;
+      border: 1px dashed #475569;
+      border-radius: 8px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      justify-content: space-between;
+    }
+    .backup-action-box.highlight {
+      border-color: #0284c7;
+      background: #0c1a2e;
+    }
+    .backup-box-title { font-size: 12.5px; font-weight: 700; color: #f8fafc; }
+    .backup-box-desc { font-size: 11.5px; color: #94a3b8; line-height: 1.5; }
+
     .master-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; flex-wrap: wrap; gap: 10px; }
     .btn-primary { background: #0284c7; border: none; color: white; padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.15s; white-space: nowrap; }
     .btn-primary:hover { background: #0369a1; }
@@ -914,6 +1066,101 @@
 
     .ai-advice-panel { background: #0f172a; border: 1px solid #10b981; border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 12px; font-size: 11.5px; line-height: 1.55; color: #e2e8f0; white-space: pre-wrap; }
 
+    /* 🤖 AI着手優先度診断モーダルのスタイル拡張 */
+    .priority-target-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 130px;
+      overflow-y: auto;
+      background: #090d16;
+      border: 1px solid #1e3a8a;
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+    .priority-target-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11.5px;
+      background: #0f172a;
+      padding: 5px 8px;
+      border-radius: 4px;
+      border: 1px solid #1e293b;
+    }
+    .priority-target-item strong { color: #f8fafc; }
+    
+    .priority-results-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 4px;
+    }
+    .priority-section-card {
+      background: #090d16;
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border: 1px solid #334155;
+    }
+    .priority-section-card.ranking {
+      border-left: 4px solid #facc15;
+      background: #111b2b;
+      border-color: #1e3a8a;
+    }
+    .priority-section-card.bundle {
+      border-left: 4px solid #38bdf8;
+      background: #0c1a2e;
+      border-color: #0284c7;
+    }
+    .priority-section-card.split {
+      border-left: 4px solid #10b981;
+      background: #062319;
+      border-color: #059669;
+    }
+    .priority-section-card.warning {
+      border-left: 4px solid #f97316;
+      background: #251206;
+      border-color: #b45309;
+    }
+    
+    .priority-section-header {
+      font-size: 12.5px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .priority-section-header.ranking { color: #fde047; }
+    .priority-section-header.bundle { color: #93c5fd; }
+    .priority-section-header.split { color: #a7f3d0; }
+    .priority-section-header.warning { color: #fdba74; }
+
+    .priority-step-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      background: #0f172a;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #1e3a8a;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .priority-step-badge {
+      font-size: 10.5px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .priority-step-badge.gold { background: #854d0e; color: #fef08a; border: 1px solid #facc15; }
+    .priority-step-badge.blue { background: #0c213b; color: #38bdf8; border: 1px solid #0284c7; }
+    .priority-step-badge.slate { background: #1e293b; color: #cbd5e1; border: 1px solid #475569; }
+
     /* 🛡️ 事前診断（プリフライト）モーダル */
     .preflight-issue-card { background: #0f172a; border-radius: 8px; padding: 12px 14px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 6px; }
     .preflight-issue-card.danger { border: 1px solid #ef4444; border-left: 5px solid #ef4444; background: #250b0b; }
@@ -931,7 +1178,7 @@
     .badge-triage.create { background: #059669; color: white; }
     .badge-cost { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: #1e293b; color: #cbd5e1; border: 1px solid #475569; }
 
-    /* 💬 アイデア壁打ち（第1段階の頭の整理 ＆ 計画昇格）モーダル - ワイド＆ゆったり表示対応 */
+    /* 💬 アイデア壁打ち（第1段階の頭の整理 ＆ 計画昇格）モーダル */
     .modal-overlay#sparringModalOverlay .modal-card { width: 840px; max-width: 92vw; max-height: 90vh; }
     .sparring-source-box { background: #0f172a; border: 1px solid #1e3a8a; border-left: 4px solid #38bdf8; padding: 10px 14px; border-radius: 6px; font-size: 12px; color: #cbd5e1; line-height: 1.5; white-space: pre-wrap; }
     .sparring-chat-container { display: flex; flex-direction: column; gap: 10px; min-height: 220px; max-height: 420px; overflow-y: auto; background: #090d16; padding: 14px; border-radius: 8px; border: 1px solid #334155; }
@@ -1042,7 +1289,7 @@
     <div class="header-left">
       <h1>
         <span>Studio マネージャー</span>
-        <span class="app-version-badge" id="appVersionBadge">v1.3.0</span>
+        <span class="app-version-badge" id="appVersionBadge">v1.4.2</span>
       </h1>
       <div class="nav-tabs">
         <button class="tab-btn active" data-tab="tab1">① IDモニター (残量・メーター)</button>
@@ -1087,6 +1334,27 @@
             💡 プログラム名をクリックすると、右側の該当カードへ即座にジャンプします。
           </p>
           <div class="chart-list" id="chartList"></div>
+
+          <!-- 🧾 【新設】直近の加算レシート（監査ログ）アコーディオン -->
+          <div class="receipt-section" id="receiptSection">
+            <div class="receipt-head" id="receiptHead">
+              <div class="receipt-head-title">
+                <span>🧾 直近トークン増分レシート (監査ログ)</span>
+                <span class="receipt-count-badge" id="receiptCountBadge">0件</span>
+              </div>
+              <div class="receipt-head-actions">
+                <span id="receiptToggleArrow" style="font-size: 10.5px; color: #38bdf8;">▼ 展開</span>
+              </div>
+            </div>
+            <div class="receipt-body" id="receiptBody">
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; font-size: 10.5px; color: #64748b;">
+                <span>直近の加算・補正イベント（最新30件）</span>
+                <button type="button" id="clearReceiptLogsBtn" style="background: transparent; border: none; color: #94a3b8; cursor: pointer; text-decoration: underline; font-size: 10px;">ログ消去</button>
+              </div>
+              <div class="receipt-list" id="receiptList"></div>
+            </div>
+          </div>
+
         </div>
 
         <!-- 📌 右側：ワイドなプログラム一覧・ロードマップ (突き抜け防止) -->
@@ -1163,9 +1431,14 @@
         </div>
       </div>
 
-      <!-- 🥉 最下段：APIキー設定カード -->
+      <!-- 🥉 共通API設定カード（GitHub自動復元ボタン付き） -->
       <div class="api-card">
-        <div class="api-card-title">🔑 共通アカウント設定（Gemini API & GitHub Token）</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div class="api-card-title">🔑 共通アカウント設定（Gemini API & GitHub Token）</div>
+          <button type="button" class="btn-secondary" id="syncGithubRestoreBtn" style="background: #172554; border-color: #38bdf8; color: #38bdf8; font-weight: 700; padding: 5px 12px; font-size: 11.5px; display: inline-flex; align-items: center; gap: 5px;">
+            <span>🐙</span> GitHubから全プログラムのバージョン・履歴を一括自動同期
+          </button>
+        </div>
         
         <div class="api-grid-2col">
           <div class="api-col-left">
@@ -1185,13 +1458,52 @@
               <input type="password" class="api-input" id="githubToken" placeholder="ghp_xxxxxxxxxxxx (repo権限)" style="height: 38px;">
             </div>
             <p style="font-size: 11px; color: #94a3b8; line-height: 1.45; margin-top: 2px;">
-              ※GitHubへの直接セーブやREADME自動更新に使用します。Classic Token (repo権限) または Fine-grained Token を設定してください。
+              ※GitHubへの直接セーブやREADME自動更新、バージョン履歴の同期に使用します。
             </p>
           </div>
         </div>
 
         <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
           <button class="btn-primary" id="saveApiConfigBtn" style="padding: 7px 18px; font-size: 12px;">💾 共通API設定を保存</button>
+        </div>
+      </div>
+
+      <!-- 💾 データ保護・完全バックアップ＆復元カード -->
+      <div class="backup-card">
+        <div class="backup-card-title">
+          <span>💾</span> データ保護・完全バックアップ ＆ 復元（二度とデータを失わない安全装置）
+        </div>
+        <p style="font-size: 12px; color: #cbd5e1; line-height: 1.5; margin-top: -4px;">
+          マネージャー内の全データ（全プログラムのバージョン、未着手エンハンス計画、アイデアメモ、ナレッジカード、設定）を1つのJSONファイルとしてPCに保存し、いつでも完全に復元できます。
+        </p>
+
+        <div class="backup-grid-2col">
+          <div class="backup-action-box highlight">
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <span class="backup-box-title">📥 全データをJSONファイルに書き出し（バックアップ）</span>
+              <span class="backup-box-desc">
+                現在の全データを1つのバックアップファイルとしてPCにダウンロード保存します。拡張機能の更新前や定期的な保存を推奨します。
+              </span>
+            </div>
+            <button type="button" class="btn-primary" id="exportBackupBtn" style="background: #0284c7; border-color: #38bdf8; width: 100%;">
+              📥 バックアップファイルをPCに保存
+            </button>
+          </div>
+
+          <div class="backup-action-box">
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <span class="backup-box-title">📤 バックアップファイルから完全復元（リストア）</span>
+              <span class="backup-box-desc">
+                保存しておいたバックアップファイル（.json）を読み込み、当時の計画・メモ・履歴を1秒で完全に復元します。
+              </span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="file" id="backupFileInput" accept=".json" style="display: none;">
+              <button type="button" class="btn-secondary" id="importBackupBtn" style="background: #1e3a8a; border-color: #38bdf8; color: #38bdf8; font-weight: bold; width: 100%;">
+                📤 バックアップファイルを選択して復元
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1223,7 +1535,6 @@
         <p>本拡張機能は、AI Studioのタブをリアルタイムに自動検知し、使用量を可視化しながら、蓄積されたナレッジとGitHubセーブを一体化して開発を力強く支援します。</p>
       </div>
 
-      <!-- 🛡️ 【最重要ルール】デグレード根絶の「代表ファイル1箇所集中」原則 -->
       <div class="guide-card" style="border-color: #10b981; background: #062319;">
         <h2 style="color: #34d399;">🛡️ 2. 【絶対原則】デグレードを根絶する「代表ファイル1箇所集中」バージョンルール</h2>
         <p><strong>なぜ全ファイルの1行目にバージョン番号を書かせてはいけないのか？</strong><br>
@@ -1339,14 +1650,20 @@
 
   <!-- 🤖 AI着手優先度診断モーダル -->
   <div class="modal-overlay" id="priorityModalOverlay">
-    <div class="modal-card" style="width: 840px;">
+    <div class="modal-card" style="width: 860px; max-width: 92vw; max-height: 90vh;">
       <div class="modal-header">
         <h2 id="priorityModalTitle">🤖 AI着手優先度チェック（どれから始めるべき？）</h2>
         <button id="closePriorityModalBtn" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
       </div>
-      <div class="modal-body">
-        <div id="priorityLoadingBanner" class="status-banner active">⏳ 現在の全計画とコードを照合し、優先順序・まとめ・小分け提案を推論中...</div>
-        <div id="priorityResultContent" class="ai-advice-panel active" style="min-height: 180px; font-size: 12.5px;"></div>
+      <div class="modal-body" style="padding: 18px 20px;">
+        <div class="modal-field">
+          <label class="field-label">📋 診断対象の計画一覧（全 <span id="priorityTargetCount" style="color: #38bdf8; font-weight: bold;">0</span> 件）</label>
+          <div class="priority-target-list" id="priorityTargetPlansList"></div>
+        </div>
+
+        <div id="priorityLoadingBanner" class="status-banner active">⏳ 各計画の依存関係・リスク・手戻りコストを総合照合し、推奨順序とまとめ・小分け提案を推論中...</div>
+        
+        <div id="priorityResultContent" class="priority-results-wrapper" style="display: none;"></div>
       </div>
       <div class="modal-footer">
         <button class="btn-primary" id="closePriorityResultBtn" style="margin-left: auto;">了解しました</button>
@@ -1377,7 +1694,7 @@
     </div>
   </div>
 
-  <!-- 💬 アイデア壁打ち（第1段階の頭の整理 ＆ 計画昇格）モーダル - 正しいOverlayクラス名へ修復 -->
+  <!-- 💬 アイデア壁打ちモーダル -->
   <div class="modal-overlay" id="sparringModalOverlay">
     <div class="modal-card" style="width: 840px;">
       <div class="modal-header">
@@ -1503,7 +1820,7 @@
     </div>
   </div>
 
-  <!-- 🛡️ GitHub事前チェック（プリフライト診断結果）モーダル -->
+  <!-- 🛡️ GitHub事前チェックモーダル -->
   <div class="modal-overlay" id="preflightModalOverlay">
     <div class="modal-card" style="width: 680px;">
       <div class="modal-header" style="background: #0f172a;">
@@ -1550,7 +1867,8 @@
       </div>
       <div class="modal-body" style="padding: 18px 20px;">
         <p style="font-size: 12px; color: #cbd5e1; line-height: 1.5; margin-bottom: 8px;">
-          過去チャットの誤読などで累計数値が跳ね上がった場合に、正しい数値へ直接修正・リセットできます。
+          過去チャットの誤読などで累計数値が跳ね上がった場合に、正しい数値へ直接修正・リセットできます。<br>
+          <strong style="color: #38bdf8;">※プログラム側集計値（リソース配分）も連動して自動巻き戻しされます。</strong>
         </p>
         <div class="modal-field">
           <label class="field-label" id="tokenCorrectTargetLabel">ID 1 の本日の実質累計トークン数</label>
