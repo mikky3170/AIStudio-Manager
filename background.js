@@ -1,4 +1,4 @@
-// [v1.4.2 作業版 Rev.1] トークン加算レシート自動記録エンジンおよび手動補正完全連動の実装
+// [v1.4.3 作業版 Rev.3] 初速トークン切り捨て根絶＆リアルタイムレシート即時発行パイプラインの確立
 
 chrome.action.onClicked.addListener(() => {
   chrome.tabs.create({ url: chrome.runtime.getURL("display.html") });
@@ -93,7 +93,6 @@ function checkDailyReset() {
         url: "",
         note: "全アカウントの本日の累計トークンを0にリセットしました"
       });
-      if (txLogs.length > 40) txLogs.length = 40;
 
       chrome.storage.local.set({
         accounts: currentAccounts,
@@ -119,7 +118,7 @@ function calculateDailyMeter(dailyTokens) {
   return 80;
 }
 
-// メッセージハンドラ（誤爆加算ゼロの堅牢差分検知 ＆ アカウント逆引き ＆ 異常値ヒューズ保護 ＆ レシート自動発行）
+// メッセージハンドラ（誤爆加算ゼロ ＆ 初速トークン切り捨て根絶 ＆ アカウント逆引き ＆ レシート即時発行）
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 🔍 タブIDからアカウントIDを正確に逆引き（URLに /u/X がない場合のアカウント誤認を完全防止）
   if (message.type === "RESOLVE_ACCOUNT_ID") {
@@ -164,7 +163,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!acc.urlBaselines) acc.urlBaselines = {};
 
       if (tokens > 0 && cleanUrl) {
-        // 🚀 New Chatから固有URLへの昇格検知（初速トークン切り捨て事故の完全防止）
+        // 🚀 A. new_chat から固有IDへのリダイレクト昇格検知（初速トークン消失の完全根絶）
         const isPromotedFromNewChat = (
           acc.lastChatUrl &&
           acc.lastChatUrl.includes("/prompts/new_chat") &&
@@ -177,27 +176,60 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           delete acc.urlBaselines[acc.lastChatUrl];
         }
 
-        // 🛡️ 初めて検知されたURLの場合の判定
+        const now = new Date();
+        const dateStr = `${now.getMonth() + 1}/${now.getDate()}`;
+        const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const targetProgId = acc.currentProgramId || "prog_unassigned";
+        const targetProg = programs.find(p => p.id === targetProgId);
+        const progName = targetProg ? targetProg.name : (targetProgId === "prog_unassigned" ? "未分類タスク（検証）" : targetProgId);
+
+        // 🛡️ B. URLごとの差分判定（初速トークン切り捨て事故を完全に防ぎつつ、古いチャット閲覧のみ初期化）
         if (acc.urlBaselines[cleanUrl] === undefined) {
-          // 過去チャットを一覧から開いた場合：その時点のトークンをベースラインに登録（誤爆加算ゼロを完全死守）
-          acc.urlBaselines[cleanUrl] = tokens;
+          // もし本日のそのアカウントの累計が0tkであり、かつユーザーが今作業中のチャットである場合：
+          // 「初速の作業トークン」として扱い、全額を本日の累計に加算してレシートを発行する！
+          const isInitialActiveWork = (acc.tokens === 0 && tokens > 0);
+
+          if (isInitialActiveWork) {
+            const initialDelta = tokens;
+            acc.tokens = initialDelta;
+            acc.urlBaselines[cleanUrl] = tokens;
+
+            if (!dailyProgUsage[todayKey]) dailyProgUsage[todayKey] = {};
+            dailyProgUsage[todayKey][targetProgId] = (dailyProgUsage[todayKey][targetProgId] || 0) + initialDelta;
+
+            txLogs.unshift({
+              id: `tx_${Date.now()}_init`,
+              timestamp: Date.now(),
+              dateStr: dateStr,
+              timeStr: timeStr,
+              type: "usage",
+              accountId: accountId,
+              programId: targetProgId,
+              programName: progName,
+              delta: initialDelta,
+              totalChatTokens: tokens,
+              url: cleanUrl,
+              chatTitle: title || "作業開始チャット",
+              isLargeDelta: (initialDelta >= 30000),
+              note: "チャット初回検知による利用トークンの自動加算"
+            });
+
+          } else {
+            // すでに本日作業実績がある状態で、まったく別の未知URLを初めて開いた場合：
+            // 古い過去チャットを開いて閲覧したと判定し、ベースラインに登録（誤爆加算ゼロを死守）
+            acc.urlBaselines[cleanUrl] = tokens;
+          }
+
         } else {
+          // すでにベースラインが存在するチャットでの「継続・追加発言によるリアルタイム増分検知」
           const prevToken = acc.urlBaselines[cleanUrl];
 
           if (tokens > prevToken) {
             const delta = tokens - prevToken;
 
             // 🛡️ 【最重要防壁：異常値ヒューズ】
-            // 1回の検知スキャン（3秒間）で20万トークンを超える異常な急増が発生した場合、
-            // それは会話による増加ではなく「チャットの切り替えや読み込みのズレ」と断定し、加算を物理遮断する！
-            const MAX_REALISTIC_DELTA_PER_TURN = 200000;
-
-            const now = new Date();
-            const dateStr = `${now.getMonth() + 1}/${now.getDate()}`;
-            const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-            const targetProgId = acc.currentProgramId || "prog_unassigned";
-            const targetProg = programs.find(p => p.id === targetProgId);
-            const progName = targetProg ? targetProg.name : (targetProgId === "prog_unassigned" ? "未分類タスク（検証）" : targetProgId);
+            // 1回の検知スキャン（3秒間）で35万トークンを超える異常な急増が発生した場合のみ遮断
+            const MAX_REALISTIC_DELTA_PER_TURN = 350000;
 
             if (delta <= MAX_REALISTIC_DELTA_PER_TURN) {
               acc.tokens = (acc.tokens || 0) + delta;
@@ -206,7 +238,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               if (!dailyProgUsage[todayKey]) dailyProgUsage[todayKey] = {};
               dailyProgUsage[todayKey][targetProgId] = (dailyProgUsage[todayKey][targetProgId] || 0) + delta;
 
-              // 🧾 【トークン増分レシートの記録】
+              // 🧾 【リアルタイムトークン増分レシートの発行】
               txLogs.unshift({
                 id: `tx_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
                 timestamp: Date.now(),
@@ -222,7 +254,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 chatTitle: title || "チャットセッション",
                 isLargeDelta: (delta >= 30000)
               });
-              if (txLogs.length > 40) txLogs.length = 40;
 
             } else {
               console.warn(`[ヒューズ作動] 異常なトークン急増を検知 (delta: ${delta} tk)。誤爆防止のため加算を遮断し、ベースラインのみを同期しました。`);
@@ -244,11 +275,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 chatTitle: title || "チャットセッション",
                 note: `異常な急増 (+${delta.toLocaleString()} tk) を検知したため加算を安全遮断しました`
               });
-              if (txLogs.length > 40) txLogs.length = 40;
             }
 
           } else if (tokens < prevToken) {
-            // プロンプト編集や一部巻き戻しでトークンが減った場合のベースライン補正
+            // プロンプト編集や一部巻き戻しでトークンが減った場合のベースライン同期
             acc.urlBaselines[cleanUrl] = tokens;
           }
         }
@@ -259,6 +289,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           acc.startTime = Date.now();
         }
 
+        // 📊 メーター表示のリアルタイム同期（20%〜80%自動、100%手動）
         if (acc.statusMode !== "limited" && acc.meterLevel !== 100) {
           acc.meterLevel = calculateDailyMeter(acc.tokens);
         }
@@ -292,7 +323,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           acc.meterLevel = calculateDailyMeter(acc.tokens);
         }
 
-        // 🔗 【整合性の完全死守】プログラム側集計値（dailyProgUsage）も同時に巻き戻し・連動
+        // 🔗 プログラム側集計値（dailyProgUsage）も同時に巻き戻し・連動
         const targetProgId = acc.currentProgramId || "prog_unassigned";
         if (!dailyProgUsage[todayKey]) dailyProgUsage[todayKey] = {};
         const currentProgVal = dailyProgUsage[todayKey][targetProgId] || 0;
@@ -319,7 +350,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           url: acc.currentUrl || "",
           note: `手動補正: ${oldTokens.toLocaleString()} tk ➜ ${targetNewTokens.toLocaleString()} tk (差分: ${deltaDiff >= 0 ? '+' : ''}${deltaDiff.toLocaleString()} tk)`
         });
-        if (txLogs.length > 40) txLogs.length = 40;
 
         chrome.storage.local.set({ accounts, dailyProgUsage, tokenTransactionLogs: txLogs }, () => {
           sendResponse({ success: true, tokens: acc.tokens });
