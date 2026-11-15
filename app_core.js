@@ -1,5 +1,15 @@
-// [v1.4.2 作業版 Rev.6] 直近トークン増分レシート状態管理・リアルタイム同期・アコーディオン初期化の実装
-const APP_DEFAULT_VERSION = "v1.3.0";
+// [作業版 Rev.8] manifestバージョン動的取得化＆Gemini API 30秒/60秒フォールバック通信基盤の統合
+
+// 🛡️ 代表ファイル(manifest.json)からバージョンを唯一無二の真実として動的取得
+function getManifestVersion() {
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getManifest) {
+    const manifest = chrome.runtime.getManifest();
+    if (manifest && manifest.version) {
+      return `v${manifest.version}`;
+    }
+  }
+  return "v1.4.3";
+}
 
 function createInitialAccounts() {
   const accounts = {};
@@ -28,17 +38,24 @@ const defaultPrograms = [
   {
     id: "prog_1",
     name: "01_Studio マネージャー(AI Studio連携)",
-    version: "v1.4.2",
+    version: getManifestVersion(),
     githubRepo: "your-id/AIStudio-Manager",
     isWebPublish: false,
     customInstruction: "Chrome拡張機能(Manifest V3)の設計規約を遵守すること。バックグラウンドサービスワーカー(background.js)とコンテンツスクリプト(content.js)の通信規約、chrome.storage.localの保存仕様を維持すること。",
-    files: "manifest.json, background.js, display.html, app_core.js, app_ui.js, app_concierge.js, content.js",
+    files: "manifest.json, background.js, display.html, app_core.js, app_ui.js, app_concierge.js, content.js, receipt_viewer.html, receipt_viewer.js",
     tokensWeek: 0,
     tokensMonth: 0,
     hoursWeek: 0,
-    lastCommit: "v1.3.0: 安定集計エンジンの確立とバージョン自動着手",
+    lastCommit: "v1.4.3: トークン領収書の全件永久保存・CSVエクスポート＆大画面フルワイド分析ダッシュボード搭載",
     inboxNotes: [],
     saveHistory: [
+      {
+        version: "v1.4.3",
+        timestamp: Date.now() - 1800000,
+        dateStr: "2025/2/24 16:00",
+        commitMsg: "v1.4.3: トークン領収書の全件永久保存・CSVエクスポート＆大画面フルワイド分析ダッシュボード搭載",
+        summary: "■ トークン領収書（レシート監査ログ）の永続化と大画面アナリティクス機能の実装\n・レシートログの40件上限を完全撤廃し、全件永久蓄積仕様へ昇格\n・過去の全ログをBOM付きUTF-8 CSVとして一括ダウンロードするエクスポート機能の実装\n・PCの大画面作業領域を活かした自己完結型フルスクリーン分析ダッシュボード（receipt_viewer.html）の新設"
+      },
       {
         version: "v1.3.0",
         timestamp: Date.now() - 3600000,
@@ -369,12 +386,17 @@ function updateActiveModelBadge() {
   }
 }
 
+// 🛡️ manifest.json を唯一の基準としてバッジおよび自プログラムの稼働版を同期
 function updateAppVersionBadge() {
+  const actualVer = getManifestVersion();
   const badgeEl = document.getElementById("appVersionBadge");
-  if (!badgeEl) return;
+  if (badgeEl) {
+    badgeEl.innerText = actualVer;
+  }
   const p1 = programsData.find(p => p.id === "prog_1");
-  const actualVer = (p1 && p1.version) ? p1.version : APP_DEFAULT_VERSION;
-  badgeEl.innerText = actualVer;
+  if (p1 && p1.version !== actualVer) {
+    p1.version = actualVer;
+  }
 }
 
 function formatElapsedTime(startTime) {
@@ -417,7 +439,17 @@ function calculateNextVersion(currentVerStr, type = "minor") {
 async function loadFullExtensionSourceCode() {
   if (systemSourceCodeBundle) return systemSourceCodeBundle;
 
-  const files = ["manifest.json", "display.html", "background.js", "content.js", "app_core.js", "app_ui.js", "app_concierge.js"];
+  const files = [
+    "manifest.json",
+    "display.html",
+    "background.js",
+    "content.js",
+    "app_core.js",
+    "app_ui.js",
+    "app_concierge.js",
+    "receipt_viewer.html",
+    "receipt_viewer.js"
+  ];
   const loaded = [];
 
   for (const filename of files) {
@@ -457,7 +489,7 @@ function resolveCanonicalProgram(item) {
   if (textToScan.includes("健康") || textToScan.includes("バイタル") || textToScan.includes("カロリー") || textToScan.includes("栄養")) return programsData.find(p => p.id === "prog_9");
   if (textToScan.includes("思考構造化") || textToScan.includes("発射台") || textToScan.includes("thinking studio")) return programsData.find(p => p.id === "prog_2");
   if (textToScan.includes("wish") || textToScan.includes("action コックピット") || textToScan.includes("懸案")) return programsData.find(p => p.id === "prog_3");
-  if (textToScan.includes("spec studio") || textToScan.includes("設計書") || textToScan.includes("マニュアル自動生成")) return programsData.find(p => p.id === "prog_4");
+  if (textToScan.includes("spec studio") || textToScan.includes("設計書") || textToScan.includes("テクニカルライター")) return programsData.find(p => p.id === "prog_4");
   if (textToScan.includes("studio マネージャー") || textToScan.includes("マネージャー") || textToScan.includes("拡張機能") || textToScan.includes("idモニター")) return programsData.find(p => p.id === "prog_1");
 
   return programsData.find(p => p.id === "prog_10") || programsData[0];
@@ -568,7 +600,10 @@ function cleanupAndMigrateSaveHistory() {
       if (!Array.isArray(current.saveHistory)) { current.saveHistory = dp.saveHistory || []; hasChanges = true; }
       if (!Array.isArray(current.enhancePlans)) { current.enhancePlans = dp.enhancePlans || []; hasChanges = true; }
 
-      if (current.saveHistory && current.saveHistory.length > 0) {
+      if (current.id === "prog_1") {
+        current.version = getManifestVersion();
+        hasChanges = true;
+      } else if (current.saveHistory && current.saveHistory.length > 0) {
         const latestSaved = current.saveHistory[0].version;
         if (latestSaved && current.version !== latestSaved) {
           current.version = latestSaved;
@@ -669,6 +704,100 @@ function calculateAggregatedTokens() {
   return { totals: progTotals, desc: descText };
 }
 
+// === 🚀 Gemini API 堅牢通信基盤 (30秒/60秒フォールバック ＆ 確実なタイマー破棄) ===
+async function callGeminiApiWithFallback(promptText, options = {}) {
+  if (!apiConfig.geminiApiKey) {
+    throw new Error("Gemini APIキーが設定されていません。「⚙️ 設定」タブでAPIキーを設定してください。");
+  }
+
+  const primaryModel = "gemini-3.5-flash-lite";
+  const fallbackModel = "gemini-flash-lite-latest";
+
+  const {
+    temperature = 0.2,
+    responseMimeType = null,
+    systemInstruction = null,
+    contents = null
+  } = options;
+
+  let requestContents = contents;
+  if (!requestContents) {
+    requestContents = [{ parts: [{ text: promptText }] }];
+  }
+
+  const payload = {
+    contents: requestContents,
+    generationConfig: {
+      temperature: temperature
+    }
+  };
+
+  if (responseMimeType) {
+    payload.generationConfig.responseMimeType = responseMimeType;
+  }
+  if (systemInstruction) {
+    payload.systemInstruction = {
+      parts: [{ text: systemInstruction }]
+    };
+  }
+
+  async function executeSingleCall(modelName, timeoutMs) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, timeoutMs);
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiConfig.geminiApiKey}`;
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        const message = errJson.error?.message || `HTTP ${res.status}`;
+        throw new Error(message);
+      }
+
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+      return { text, usedModel: modelName };
+    } catch (err) {
+      if (err.name === "AbortError") {
+        throw new Error(`通信タイムアウト (${timeoutMs / 1000}秒超過)`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  // 1. 第1優先モデルの実行 (30秒タイムアウト)
+  let primaryError = null;
+  try {
+    return await executeSingleCall(primaryModel, 30000);
+  } catch (err1) {
+    primaryError = err1;
+    console.warn(`[Gemini通信] 第1優先 (${primaryModel} / 30秒) で失敗: ${err1.message}。第2優先 (${fallbackModel} / 60秒) へ自動フォールバックします...`);
+  }
+
+  // 2. 第2優先モデルの実行 (60秒タイムアウト)
+  try {
+    return await executeSingleCall(fallbackModel, 60000);
+  } catch (err2) {
+    console.error(`[Gemini通信] 第2優先 (${fallbackModel} / 60秒) も失敗: ${err2.message}`);
+    const detailMsg = `⚠️ 【AI通信エラーが発生しました】\n` +
+      `・第1優先 (${primaryModel} / 30秒): ${primaryError ? primaryError.message : '不明なエラー'}\n` +
+      `・第2優先 (${fallbackModel} / 60秒): ${err2.message}\n\n` +
+      `※ネットワーク接続またはAI Studio発行のAPIキー・利用クォータをご確認ください。`;
+    throw new Error(detailMsg);
+  }
+}
+
 // === 💾 データ保護・完全バックアップ＆復元（エクスポート / インポート） ===
 function exportFullBackupData() {
   chrome.storage.local.get(null, (allData) => {
@@ -712,7 +841,7 @@ function importFullBackupData(jsonString) {
   }
 }
 
-// === 🐙 GitHubから全プログラムのバージョン・履歴を一括自動同期復元（完全堅牢版） ===
+// === 🐙 GitHubから全プログラムのバージョン・履歴を一括自動同期復元 ===
 async function restoreAllProgramsFromGitHub() {
   const tokenInput = document.getElementById("githubToken");
   const currentToken = (tokenInput && tokenInput.value.trim()) || apiConfig.githubToken;
@@ -722,7 +851,6 @@ async function restoreAllProgramsFromGitHub() {
   }
   apiConfig.githubToken = currentToken;
 
-  // 1. 画面テーブル上の入力欄から、最新のプログラム名・リポジトリ名を直接取り込んで即時反映
   const masterRows = document.querySelectorAll("#masterTableBody tr");
   masterRows.forEach(row => {
     const nameInput = row.querySelector(".master-name");
@@ -758,7 +886,6 @@ async function restoreAllProgramsFromGitHub() {
 
     let restored = false;
 
-    // ① README.md からの Change Log 解析
     let readmeText = await fetchOldFileFromGitHub(repoFullName, "README.md");
     if (!readmeText) readmeText = await fetchOldFileFromGitHub(repoFullName, "readme.md");
 
@@ -766,7 +893,7 @@ async function restoreAllProgramsFromGitHub() {
       const parsedHistory = parseChangeLogFromReadme(readmeText);
       if (parsedHistory.length > 0) {
         prog.saveHistory = parsedHistory;
-        prog.version = parsedHistory[0].version || prog.version;
+        prog.version = (prog.id === "prog_1") ? getManifestVersion() : (parsedHistory[0].version || prog.version);
         prog.lastCommit = parsedHistory[0].commitMsg || prog.lastCommit;
         reportLines.push(`✅ 【${prog.name}】: READMEから復元 ➜ ${prog.version} (履歴 ${parsedHistory.length}件)`);
         successCount++;
@@ -774,7 +901,6 @@ async function restoreAllProgramsFromGitHub() {
       }
     }
 
-    // ② READMEに履歴がない場合は、Gitコミットログ（最新30件）からバージョンと履歴を再構築
     if (!restored) {
       try {
         const commitsUrl = `https://api.github.com/repos/${owner}/${repo}/commits?per_page=30`;
@@ -812,7 +938,7 @@ async function restoreAllProgramsFromGitHub() {
             }
 
             prog.saveHistory = rebuiltHistory;
-            prog.version = latestFoundVer || rebuiltHistory[0].version || prog.version || "v1.0.0";
+            prog.version = (prog.id === "prog_1") ? getManifestVersion() : (latestFoundVer || rebuiltHistory[0].version || prog.version || "v1.0.0");
             prog.lastCommit = rebuiltHistory[0].commitMsg;
             reportLines.push(`✅ 【${prog.name}】: コミットログから復元 ➜ ${prog.version} (履歴 ${rebuiltHistory.length}件)`);
             successCount++;
@@ -829,7 +955,6 @@ async function restoreAllProgramsFromGitHub() {
     }
   }
 
-  // ストレージへの完全保存と全UIコンポーネントの強制再描画
   chrome.storage.local.set({ programs: programsData, apiConfig });
   updateAppVersionBadge();
   renderProgramDashboard();
@@ -837,7 +962,6 @@ async function restoreAllProgramsFromGitHub() {
   if (typeof setupCards === "function") setupCards();
   if (typeof updateCardValues === "function") updateCardValues();
 
-  // 完全なレポートダイアログを表示
   const summaryMsg = `🎉 【GitHub同期復元レポート】\n対象プログラム: 全${programsData.length}件中、${successCount}件の復元に成功しました。\n\n` + reportLines.join("\n");
   alert(summaryMsg);
 }
@@ -873,9 +997,6 @@ function parseChangeLogFromReadme(readmeContent) {
 
 // === 💬 アイデア壁打ち（第1段階の頭の整理：自然言語要件化アシスタント） ===
 async function runInitialSparring(prog, noteText) {
-  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
-
   const currentVer = prog.version || "v1.0.0";
   const nextMinor = calculateNextVersion(currentVer, "minor");
   const nextPatch = calculateNextVersion(currentVer, "patch");
@@ -898,32 +1019,16 @@ ${noteText}
 {
   "suggestedTitle": "40文字以内のスッキリした計画タイトル",
   "targetVer": "${nextMinor}" または "${nextPatch}",
-  "aiMessage": "💡 要約・スコープ整理:\n・【この機能の目的】: （1〜2行で簡潔に）\n・【実装したい具体的な要件】:\n  1. ...\n  2. ...\n・【今回の判断（安全策）】: （手戻りを避けるため、今回は見送るべき点や注意点など）\n\nこれでよろしければ下の「正式計画へ昇格」を押してください。調整したい点があればご返信ください。"
+  "aiMessage": "💡 要約・スコープ整理:\\n・【この機能の目的】: （1〜2行で簡潔に）\\n・【実装したい具体的な要件】:\\n  1. ...\\n  2. ...\\n・【今回の判断（安全策）】: （手戻りを避けるため、今回は見送るべき点や注意点など）\\n\\nこれでよろしければ下の「正式計画へ昇格」を押してください。調整したい点があればご返信ください。"
 }
 `;
 
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: 0.2,
-      responseMimeType: "application/json"
-    }
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+  const aiResult = await callGeminiApiWithFallback(prompt, {
+    temperature: 0.2,
+    responseMimeType: "application/json"
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
-  }
-
-  const data = await res.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-  const parsed = safeParseJson(rawText);
+  const parsed = safeParseJson(aiResult.text);
 
   if (parsed && parsed.suggestedTitle && parsed.aiMessage) {
     return parsed;
@@ -937,9 +1042,6 @@ ${noteText}
 }
 
 async function continueSparringChat(prog, userReply) {
-  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
-
   const prompt = `あなたはプロのアジャイルプロダクトマネージャーです。
 開発者との壁打ち対話です。ユーザーの要望やチューニング指示に基づき、要件箇条書きを再調整し、必要ならタイトルやバージョンも更新してください。
 
@@ -956,28 +1058,12 @@ ${userReply}
 }
 `;
 
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: 0.2,
-      responseMimeType: "application/json"
-    }
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+  const aiResult = await callGeminiApiWithFallback(prompt, {
+    temperature: 0.2,
+    responseMimeType: "application/json"
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
-  }
-
-  const data = await res.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-  const parsed = safeParseJson(rawText);
+  const parsed = safeParseJson(aiResult.text);
 
   if (parsed) {
     return parsed;
@@ -986,19 +1072,12 @@ ${userReply}
   return {
     updatedTitle: null,
     updatedVer: null,
-    aiMessage: rawText || "了解しました！方針を更新しました。"
+    aiMessage: aiResult.text || "了解しました！方針を更新しました。"
   };
 }
 
 // === ✨ AIアイデア交通整理・一括仕分け（Inboxメモの自動トリアージ） ===
 async function runAiTriage(prog, notes) {
-  if (!apiConfig.geminiApiKey) {
-    throw new Error("Gemini APIキーが設定されていません。「⚙️ 設定」タブでAPIキーを設定してください。");
-  }
-
-  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
-
   const currentVer = prog.version || "v1.0.0";
   const activePlans = (prog.enhancePlans || []).filter(p => p.status !== "done");
 
@@ -1048,28 +1127,12 @@ ${plansListText}
 }
 `;
 
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: 0.2,
-      responseMimeType: "application/json"
-    }
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+  const aiResult = await callGeminiApiWithFallback(prompt, {
+    temperature: 0.2,
+    responseMimeType: "application/json"
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
-  }
-
-  const data = await res.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-  const parsed = safeParseJson(rawText);
+  const parsed = safeParseJson(aiResult.text);
 
   if (parsed && Array.isArray(parsed.suggestions)) {
     return parsed;
@@ -1092,11 +1155,8 @@ ${plansListText}
   };
 }
 
-// === ✨ AIでブレークダウン＆プロンプト自動起草（01〜10番完全統一・自然言語要件化） ===
+// === ✨ AIでブレークダウン＆プロンプト自動起草 ===
 async function generateBreakdownPromptWithAI(planTitle, targetVer = "次期版") {
-  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
-
   const progName = currentTargetProg ? currentTargetProg.name : "対象プログラム";
   const customInst = currentTargetProg ? (currentTargetProg.customInstruction || "") : "";
 
@@ -1123,37 +1183,12 @@ async function generateBreakdownPromptWithAI(planTitle, targetVer = "次期版")
 3. （エラー時や例外時の安全な挙動に関する要件）
 `;
 
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2 }
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
-  }
-
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-
-  return { prompt: text, advice: "" };
+  const aiResult = await callGeminiApiWithFallback(prompt, { temperature: 0.2 });
+  return { prompt: aiResult.text, advice: "" };
 }
 
-// === 🤖 AI着手優先度チェック（タイトル明記 ＆ 美しい構造化カード出力エンジン） ===
+// === 🤖 AI着手優先度チェック ===
 async function checkPlansPriorityWithAI(prog, plans) {
-  if (!apiConfig.geminiApiKey) {
-    throw new Error("Gemini APIキーが設定されていません。「⚙️ 設定」タブでAPIキーを設定してください。");
-  }
-
-  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
-
   const plansListText = plans.map((p, idx) => `[#${idx + 1}] [${p.targetVer || '次期版'}] タイトル:「${p.title}」 (種別: ${p.verType === 'patch' ? 'バグ修正' : '機能追加'})\n要件メモ: ${p.prompt || p.aiAdvice || 'なし'}`).join("\n\n");
 
   const prompt = `あなたはプロのシニアアジャイルプロダクトマネージャーです。
@@ -1189,26 +1224,8 @@ ${plansListText}
 ・（開発時に特に注意すべきデグレード防止のコツを2行程度）
 `;
 
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2 }
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
-  }
-
-  const data = await res.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-
-  return formatPriorityResultToHtml(rawText);
+  const aiResult = await callGeminiApiWithFallback(prompt, { temperature: 0.2 });
+  return formatPriorityResultToHtml(aiResult.text);
 }
 
 function formatPriorityResultToHtml(rawText) {
@@ -1437,7 +1454,9 @@ function initModalHandlers() {
   document.querySelectorAll(".btn-ver-quick").forEach(btn => {
     btn.onclick = (e) => {
       const type = e.target.dataset.type;
-      const baseVer = currentTargetProg?.version || "v1.0.0";
+      const baseVer = (currentTargetProg?.id === "prog_1")
+        ? getManifestVersion()
+        : (currentTargetProg?.version || "v1.0.0");
       const nextVer = calculateNextVersion(baseVer, type);
       document.getElementById("modalReleaseVersionInput").value = nextVer;
 
@@ -1457,13 +1476,13 @@ function openSaveModal(prog, plan = null) {
 
   const isInitial = (!prog.saveHistory || prog.saveHistory.length === 0);
 
-  let defaultVersion = "v1.4.1";
+  let defaultVersion = (prog.id === "prog_1") ? getManifestVersion() : (prog.version || "v1.0.0");
   if (isInitial) {
     defaultVersion = "v1.0.0";
   } else if (plan) {
-    defaultVersion = plan.targetVer || calculateNextVersion(prog.version || "v1.0.0", plan.verType || "minor");
+    defaultVersion = plan.targetVer || calculateNextVersion(defaultVersion, plan.verType || "minor");
   } else {
-    defaultVersion = calculateNextVersion(prog.version || "v1.0.0", "patch");
+    defaultVersion = calculateNextVersion(defaultVersion, "patch");
   }
 
   const verLabel = document.getElementById("modalVersionLabel");
@@ -1479,7 +1498,7 @@ function openSaveModal(prog, plan = null) {
     quickBtnGroup.style.display = "flex";
   } else {
     document.getElementById("modalProgTitle").innerText = `⚠️ 【${prog.name}】 計画外の緊急セーブ`;
-    verLabel.innerText = `🏷️ リリースバージョン (稼働版: ${prog.version || 'v1.0.0'})`;
+    verLabel.innerText = `🏷️ リリースバージョン (稼働版: ${defaultVersion})`;
     quickBtnGroup.style.display = "flex";
   }
 
@@ -1545,10 +1564,10 @@ function readFileAsBase64(file) {
 async function analyzeDiffAndGenerateSummary() {
   const banner = document.getElementById("statusBanner");
   banner.className = "status-banner active";
-  banner.innerText = `⏳ 前回コードを確認し、${apiConfig.geminiModelName || 'gemini-3.5-flash-lite'} で差分を要約中...`;
+  banner.innerText = `⏳ 前回コードを確認し、差分を自動要約中... (30秒/60秒フォールバック搭載)`;
 
   const repo = document.getElementById("modalRepoInput").value.trim();
-  const relVersion = document.getElementById("modalReleaseVersionInput").value.trim() || "v1.4.1";
+  const relVersion = document.getElementById("modalReleaseVersionInput").value.trim() || getManifestVersion();
 
   if (!apiConfig.githubToken || !repo) {
     banner.innerText = "⚠️ 上の入力欄に「対象リポジトリ名」、設定タブに「GitHubトークン」を入力してください。";
@@ -1580,7 +1599,7 @@ async function analyzeDiffAndGenerateSummary() {
     const diffContext = diffs.join("\n\n");
 
     if (apiConfig.geminiApiKey) {
-      banner.innerText = `🤖 ${apiConfig.geminiModelName} がユーザー視点で分かりやすい変更概要を作成中...`;
+      banner.innerText = `🤖 差分からユーザー視点で分かりやすい変更概要を作成中...`;
       const aiResult = await callGeminiAPI(diffContext, planContext, relVersion, isInitial);
       document.getElementById("commitMessageInput").value = aiResult.commitMessage;
       document.getElementById("changeSummaryArea").value = aiResult.summary;
@@ -1646,9 +1665,6 @@ function createSnippetDiff(oldStr, newStr) {
 }
 
 async function callGeminiAPI(diffText, planContext, relVersion, isInitial = false) {
-  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
-
   const prompt = `あなたはプロのシニアプロダクトマネージャー兼テクニカルライターです。
 開発者が立てた【開発の主目的（計画）】と、変更された【コード差分】を熟読し、システムを利用するエンドユーザーやプロダクト責任者がひと目で理解できる、分かりやすく魅力的な日本語の変更概要（Change Log）を作成してください。
 
@@ -1678,24 +1694,8 @@ ${planContext}
 ${diffText || "初回登録・ベースファイル一式"}
 `;
 
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2 }
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `HTTP ${res.status}`);
-  }
-
-  const data = await res.json();
-  let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const aiResult = await callGeminiApiWithFallback(prompt, { temperature: 0.2 });
+  let rawText = aiResult.text || "";
 
   rawText = rawText
     .replace(/```[a-z]*\n?/gi, '')
@@ -1722,7 +1722,7 @@ ${diffText || "初回登録・ベースファイル一式"}
 
 async function executeGitHubPush() {
   const repoInputVal = document.getElementById("modalRepoInput").value.trim();
-  const relVersion = document.getElementById("modalReleaseVersionInput").value.trim() || "v1.4.1";
+  const relVersion = document.getElementById("modalReleaseVersionInput").value.trim() || getManifestVersion();
   const commitMsg = document.getElementById("commitMessageInput").value.trim();
   const summary = document.getElementById("changeSummaryArea").value.trim();
 
@@ -1796,7 +1796,11 @@ async function proceedGitHubPush(owner, repo, repoInputVal, relVersion, commitMs
     });
 
     currentTargetProg.lastCommit = commitMsg;
-    currentTargetProg.version = relVersion;
+    if (currentTargetProg.id === "prog_1") {
+      currentTargetProg.version = getManifestVersion();
+    } else {
+      currentTargetProg.version = relVersion;
+    }
     currentTargetProg.files = loadedLocalFiles.map(f => f.name).join(", ");
 
     if (currentTargetPlan) {
@@ -2002,7 +2006,7 @@ function initNavigation() {
 
 // === システム全体のブートストラップ ＆ 変更監視エンジン ===
 function bootstrap() {
-  console.log(`🚀 Studioマネージャー v1.4.2 起動完了`);
+  console.log(`🚀 Studioマネージャー ${getManifestVersion()} 起動完了`);
 
   initNavigation();
   initModalHandlers();
@@ -2013,7 +2017,7 @@ function bootstrap() {
   initSparringModalHandlers();
   initTokenCorrectModalHandlers();
   initBackupAndRestoreHandlers();
-  initReceiptAccordion(); // 🧾 レシートアコーディオンの初期化
+  initReceiptAccordion(); // 🧾 レシートアコーディオン＆CSV出力・ビューワー起動の初期化
   initConciergeHandlers();
   updateCountdown();
 
@@ -2023,7 +2027,7 @@ function bootstrap() {
     if (res.programs && res.programs.length > 0) programsData = res.programs;
     if (res.knowledgeLogs) knowledgeLogsData = res.knowledgeLogs;
     if (res.dailyProgUsage) dailyProgUsageData = res.dailyProgUsage;
-    if (res.tokenTransactionLogs) tokenTransactionLogsData = res.tokenTransactionLogs; // 🧾 レシートログの読み込み
+    if (res.tokenTransactionLogs) tokenTransactionLogsData = res.tokenTransactionLogs;
     
     const currentStoredTemplate = res.systemInstructionTemplate || "";
     const isOldTemplate = (
