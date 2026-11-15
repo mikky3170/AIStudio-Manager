@@ -1,0 +1,488 @@
+<!-- [作業版 Rev.3] CSP制限解消のための外部スクリプト(receipt_viewer.js)分離とマークアップ保護 -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>トークン領収書 アナリティクス・ダッシュボード (大画面フルワイド分析ビューワー)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
+    body { background-color: #090d16; color: #f8fafc; padding: 16px 24px; min-width: 1200px; overflow-x: auto; }
+
+    /* 📌 トップヘッダー */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #111827;
+      border: 1px solid #1f2937;
+      padding: 12px 20px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .header-title { font-size: 18px; font-weight: 800; color: #38bdf8; display: flex; align-items: center; gap: 8px; letter-spacing: 0.5px; }
+    .header-sub { font-size: 11.5px; color: #10b981; font-weight: 700; display: flex; align-items: center; gap: 5px; }
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+
+    .btn-tool {
+      background: #1e293b;
+      border: 1px solid #38bdf8;
+      color: #38bdf8;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .btn-tool:hover { background: #0284c7; color: white; }
+    .btn-tool.secondary { border-color: #475569; color: #cbd5e1; }
+    .btn-tool.secondary:hover { background: #334155; color: white; }
+
+    /* 🔍 フィルターコントロールバー */
+    .filter-bar {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .filter-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .filter-label { font-size: 11.5px; font-weight: 700; color: #94a3b8; }
+    .filter-select {
+      background: #0f172a;
+      border: 1px solid #374151;
+      color: #f8fafc;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      outline: none;
+    }
+    .filter-select:focus { border-color: #38bdf8; }
+
+    .period-pill-group { display: flex; gap: 4px; background: #0b1120; padding: 3px; border-radius: 6px; border: 1px solid #1f2937; }
+    .period-pill {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.15s;
+    }
+    .period-pill.active { background: #0284c7; color: white; }
+
+    /* 📊 KPIサマリーカード（大画面4列） */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .kpi-card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+    }
+    .kpi-card.cyan { border-left: 4px solid #38bdf8; }
+    .kpi-card.green { border-left: 4px solid #10b981; }
+    .kpi-card.amber { border-left: 4px solid #f59e0b; }
+    .kpi-card.purple { border-left: 4px solid #a855f7; }
+
+    .kpi-label { font-size: 11.5px; color: #94a3b8; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+    .kpi-value { font-size: 24px; font-weight: 800; color: #f8fafc; font-variant-numeric: tabular-nums; }
+    .kpi-sub { font-size: 11px; color: #64748b; }
+
+    /* 📈 中段：大画面2列グリッド */
+    .chart-grid-2col {
+      display: grid;
+      grid-template-columns: 480px minmax(0, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .panel-card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1f2937;
+      padding-bottom: 8px;
+    }
+    .panel-title { font-size: 13.5px; font-weight: 800; color: #f8fafc; display: flex; align-items: center; gap: 6px; }
+    .panel-meta { font-size: 11px; color: #64748b; }
+
+    /* プログラム別棒グラフ一覧 */
+    .prog-bars-list { display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; padding-right: 4px; }
+    .prog-bar-row { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; }
+    .prog-bar-top { display: flex; justify-content: space-between; align-items: center; }
+    .prog-bar-name { font-weight: 700; color: #cbd5e1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+    .prog-bar-stat { color: #94a3b8; font-variant-numeric: tabular-nums; }
+    .prog-bar-bg { width: 100%; height: 8px; background: #0f172a; border-radius: 4px; overflow: hidden; border: 1px solid #1f2937; }
+    .prog-bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+
+    /* SVG トレンド折れ線グラフ */
+    .trend-svg-container { width: 100%; height: 260px; position: relative; }
+    svg.trend-chart { width: 100%; height: 100%; overflow: visible; }
+    .chart-axis-text { font-size: 10px; fill: #64748b; font-family: monospace; }
+    .chart-grid-line { stroke: #1f2937; stroke-dasharray: 2, 2; }
+    .chart-line { fill: none; stroke: #38bdf8; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .chart-area { fill: url(#areaGradient); opacity: 0.3; }
+    .chart-point { fill: #38bdf8; stroke: #0f172a; stroke-width: 2; transition: r 0.15s; cursor: pointer; }
+    .chart-point:hover { r: 5; fill: #facc15; }
+
+    /* 🗓️ 下段：3列グリッド */
+    .bottom-grid-3col {
+      display: grid;
+      grid-template-columns: 360px 420px minmax(0, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    /* アカウント均等度ゲージ */
+    .id-balance-list { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+    .id-balance-row { display: flex; flex-direction: column; gap: 4px; }
+    .id-balance-top { display: flex; justify-content: space-between; font-size: 11.5px; font-weight: 700; }
+    .id-balance-bg { width: 100%; height: 9px; background: #0f172a; border-radius: 5px; overflow: hidden; border: 1px solid #1f2937; }
+    .id-balance-fill { height: 100%; border-radius: 5px; }
+
+    /* 時間帯×曜日ヒートマップ */
+    .heatmap-grid {
+      display: grid;
+      grid-template-columns: 28px repeat(24, 1fr);
+      gap: 2px;
+      font-size: 9px;
+      color: #64748b;
+      align-items: center;
+    }
+    .heatmap-cell {
+      height: 14px;
+      border-radius: 2px;
+      background: #0f172a;
+      transition: all 0.15s;
+    }
+    .heatmap-cell:hover { outline: 1px solid #facc15; }
+    .heatmap-cell.l1 { background: #0c2b4e; }
+    .heatmap-cell.l2 { background: #0284c7; }
+    .heatmap-cell.l3 { background: #38bdf8; }
+    .heatmap-cell.l4 { background: #facc15; }
+
+    /* ヘビータスクTOP 10 */
+    .top-tasks-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+    .top-task-item {
+      background: #0f172a;
+      border: 1px solid #1f2937;
+      border-radius: 6px;
+      padding: 6px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+    }
+    .top-task-title { color: #f8fafc; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .top-task-delta { color: #facc15; font-weight: 800; white-space: nowrap; }
+
+    /* 📋 最下段：全件レシート詳細テーブル */
+    .table-container {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+    }
+    .table-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .search-box {
+      background: #0f172a;
+      border: 1px solid #374151;
+      color: #f8fafc;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      width: 320px;
+      outline: none;
+    }
+    .search-box:focus { border-color: #38bdf8; }
+
+    .receipt-full-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+    }
+    .receipt-full-table th {
+      text-align: left;
+      padding: 9px 12px;
+      background: #0f172a;
+      color: #94a3b8;
+      border-bottom: 2px solid #1f2937;
+      white-space: nowrap;
+      user-select: none;
+      cursor: pointer;
+    }
+    .receipt-full-table th:hover { color: #38bdf8; }
+    .receipt-full-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #1f2937;
+      vertical-align: middle;
+    }
+    .receipt-full-table tr:hover { background: #1a2234; }
+
+    .badge-tag {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+      display: inline-block;
+    }
+    .badge-tag.usage { background: #0c213b; color: #38bdf8; border: 1px solid #0284c7; }
+    .badge-tag.warning { background: #451a03; color: #fbbf24; border: 1px solid #d97706; }
+    .badge-tag.fuse { background: #250b0b; color: #f87171; border: 1px solid #dc2626; }
+    .badge-tag.correct { background: #062319; color: #34d399; border: 1px solid #059669; }
+    .badge-tag.reset { background: #190e2b; color: #c084fc; border: 1px solid #7c3aed; }
+
+    .dropzone-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(4px);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 99999;
+      border: 3px dashed #38bdf8;
+    }
+    .dropzone-overlay.dragover { display: flex; }
+    .dropzone-msg { font-size: 20px; font-weight: 800; color: #38bdf8; pointer-events: none; }
+  </style>
+</head>
+<body>
+
+  <!-- 📂 CSVドラッグ＆ドロップ受け付けオーバーレイ -->
+  <div class="dropzone-overlay" id="dropOverlay">
+    <div class="dropzone-msg">📂 ここにエクスポートしたCSVファイルをドロップすると、即座に読み込み・分析します</div>
+  </div>
+
+  <!-- 📌 ヘッダー -->
+  <header>
+    <div class="header-left">
+      <div class="header-title">
+        <span>📊</span> トークン領収書 アナリティクス・ダッシュボード
+      </div>
+      <span class="header-sub" id="headerDataSource">🟢 拡張機能ストレージとリアルタイム自動連動中</span>
+    </div>
+    <div class="header-actions">
+      <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
+      <button type="button" class="btn-tool secondary" id="selectCsvBtn">📂 CSV読込</button>
+      <button type="button" class="btn-tool" id="refreshDataBtn">🔄 最新データ再読込</button>
+      <button type="button" class="btn-tool" id="downloadCurrentCsvBtn">📥 CSVエクスポート</button>
+    </div>
+  </header>
+
+  <!-- 🔍 期間・条件フィルター -->
+  <div class="filter-bar">
+    <div class="filter-group">
+      <span class="filter-label">📅 集計期間:</span>
+      <div class="period-pill-group">
+        <button class="period-pill active" data-period="all">全期間</button>
+        <button class="period-pill" data-period="today">本日</button>
+        <button class="period-pill" data-period="week">過去7日</button>
+        <button class="period-pill" data-period="month">過去30日</button>
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <span class="filter-label">📦 プログラム:</span>
+      <select class="filter-select" id="filterProgSelect">
+        <option value="ALL">すべて表示</option>
+      </select>
+
+      <span class="filter-label" style="margin-left: 8px;">👤 アカウント:</span>
+      <select class="filter-select" id="filterAccountSelect">
+        <option value="ALL">全アカウント (ID 1〜4)</option>
+        <option value="1">ID 1</option>
+        <option value="2">ID 2</option>
+        <option value="3">ID 3</option>
+        <option value="4">ID 4</option>
+        <option value="0">システム</option>
+      </select>
+    </div>
+
+    <div style="font-size: 11.5px; color: #94a3b8;" id="filteredCountLabel">
+      対象レコード: 0 件
+    </div>
+  </div>
+
+  <!-- 📊 最上段：KPIサマリーカード（4列） -->
+  <div class="kpi-grid">
+    <div class="kpi-card cyan">
+      <div class="kpi-label">
+        <span>📊 総消費トークン</span>
+        <span>🔥</span>
+      </div>
+      <div class="kpi-value" id="kpiTotalTokens">0 tk</div>
+      <div class="kpi-sub" id="kpiEstimatedHours">推定開発工数: 約 0.0 時間</div>
+    </div>
+
+    <div class="kpi-card green">
+      <div class="kpi-label">
+        <span>⏱️ 総開発セッション数</span>
+        <span>💬</span>
+      </div>
+      <div class="kpi-value" id="kpiSessionCount">0 回</div>
+      <div class="kpi-sub" id="kpiAvgTokensPerSession">1回平均: 0 tk / セッション</div>
+    </div>
+
+    <div class="kpi-card amber">
+      <div class="kpi-label">
+        <span>⚠️ 急増・肥大化イベント</span>
+        <span>📈</span>
+      </div>
+      <div class="kpi-value" id="kpiWarningCount">0 件</div>
+      <div class="kpi-sub" id="kpiWarningDetail">急増: 0回 / 300k超: 0回</div>
+    </div>
+
+    <div class="kpi-card purple">
+      <div class="kpi-label">
+        <span>⚖️ アカウント分散指数</span>
+        <span>🎯</span>
+      </div>
+      <div class="kpi-value" id="kpiBalanceScore">100 %</div>
+      <div class="kpi-sub" id="kpiBalanceDiagnosis">4アカウントが極めて均等に稼働</div>
+    </div>
+  </div>
+
+  <!-- 📈 中段：プログラム別配分 ＆ 時系列推移（2列） -->
+  <div class="chart-grid-2col">
+    <!-- プログラム別リソース配分 -->
+    <div class="panel-card">
+      <div class="panel-header">
+        <span class="panel-title">📦 プログラム別 リソース投資比率</span>
+        <span class="panel-meta" id="progChartMeta">上位ランキング</span>
+      </div>
+      <div class="prog-bars-list" id="progBarsList"></div>
+    </div>
+
+    <!-- 時系列消費推移 -->
+    <div class="panel-card">
+      <div class="panel-header">
+        <span class="panel-title">📈 日別 トークン消費トレンド</span>
+        <span class="panel-meta" id="trendChartMeta">日次増分推移</span>
+      </div>
+      <div class="trend-svg-container">
+        <svg class="trend-chart" id="trendSvg" viewBox="0 0 700 240" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.6"/>
+              <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.0"/>
+            </linearGradient>
+          </defs>
+          <g id="svgGridLines"></g>
+          <path id="svgAreaPath" class="chart-area" d=""></path>
+          <path id="svgLinePath" class="chart-line" d=""></path>
+          <g id="svgPoints"></g>
+          <g id="svgLabels"></g>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🗓️ 下段：アカウント均等 ＆ 時間帯ヒートマップ ＆ ヘビータスク（3列） -->
+  <div class="bottom-grid-3col">
+    <!-- アカウントローテーション -->
+    <div class="panel-card">
+      <div class="panel-header">
+        <span class="panel-title">👥 ID 1〜4 稼働バランス</span>
+        <span class="panel-meta">均等ローテーション</span>
+      </div>
+      <div class="id-balance-list" id="idBalanceList"></div>
+    </div>
+
+    <!-- 時間帯×曜日ヒートマップ -->
+    <div class="panel-card">
+      <div class="panel-header">
+        <span class="panel-title">🕒 集中開発ヒートマップ</span>
+        <span class="panel-meta">時間帯 (0〜23時) × 曜日</span>
+      </div>
+      <div class="heatmap-grid" id="heatmapGrid"></div>
+      <div style="display: flex; justify-content: flex-end; align-items: center; gap: 4px; font-size: 10px; color: #64748b; margin-top: 4px;">
+        <span>小</span>
+        <div style="width: 10px; height: 10px; background: #0f172a; border-radius: 2px;"></div>
+        <div style="width: 10px; height: 10px; background: #0c2b4e; border-radius: 2px;"></div>
+        <div style="width: 10px; height: 10px; background: #0284c7; border-radius: 2px;"></div>
+        <div style="width: 10px; height: 10px; background: #38bdf8; border-radius: 2px;"></div>
+        <div style="width: 10px; height: 10px; background: #facc15; border-radius: 2px;"></div>
+        <span>大</span>
+      </div>
+    </div>
+
+    <!-- 大量消費タスク TOP 10 -->
+    <div class="panel-card">
+      <div class="panel-header">
+        <span class="panel-title">🔥 1回の大量消費タスク TOP 10</span>
+        <span class="panel-meta">ヘビーセッション</span>
+      </div>
+      <div class="top-tasks-list" id="topTasksList"></div>
+    </div>
+  </div>
+
+  <!-- 📋 最下段：全件レシート詳細テーブル -->
+  <div class="table-container">
+    <div class="table-toolbar">
+      <div class="panel-title">
+        <span>🧾</span> 領収書 全件監査ログ明細 (<span id="tableRecordCount">0</span> 件)
+      </div>
+      <input type="text" class="search-box" id="tableSearchInput" placeholder="🔍 チャット名・プログラム名・URLで絞り込み...">
+    </div>
+
+    <div style="overflow-x: auto; max-height: 440px;">
+      <table class="receipt-full-table">
+        <thead>
+          <tr>
+            <th data-sort="timestamp">日時 ▼</th>
+            <th data-sort="accountId">アカウント</th>
+            <th data-sort="programName">プログラム名</th>
+            <th data-sort="delta" style="text-align: right;">トークン増分 (tk)</th>
+            <th data-sort="totalChatTokens" style="text-align: right;">チャット長</th>
+            <th data-sort="type">種別</th>
+            <th>チャットタイトル / タスク名</th>
+            <th>リンク</th>
+          </tr>
+        </thead>
+        <tbody id="receiptTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Manifest V3 CSP準拠: 外部スクリプトファイル読み込み -->
+  <script src="receipt_viewer.js"></script>
+</body>
+</html>
