@@ -1,10 +1,10 @@
-// [v1.2.0 作業版 Rev.1] トークン抽出の単位(k/M)対応＆URL正規化による正確なトークン検知
+// [作業版 Rev.3] AI Studioナレッジ要約の30秒/60秒フォールバック通信基盤の完全適用
 // AI Studio 開発ナレッジ自動要約＆同期エンジン
-// （手繰り寄せ型巻き戻し ＆ 全会話走査 ＆ 30万tk肥大化警告 ＆ アカウント逆引き ＆ 拡張更新時自己停止ガード搭載）
+// （手繰り寄せ型巻き戻し ＆ 全会話走査 ＆ 30万tk肥大化警告 ＆ 動的アカウント判定 ＆ 拡張更新時自己停止ガード ＆ 30秒/60秒フォールバック搭載）
 
 let scanTimerId = null;
 let injectTimerId = null;
-let cachedAccountId = null;
+let lastKnownAccountId = null;
 
 // 拡張機能のコンテキストが有効かチェックし、無効化されていたらタイマーを自己破棄する
 function isContextValid() {
@@ -21,17 +21,26 @@ function getNormalizedUrl() {
   return window.location.href.split("?")[0].split("#")[0].replace(/\/+$/, "");
 }
 
-// アカウント番号の多重判定（URLの /u/X 判定 ＋ バックグラウンド側のタブID逆引き）
+// 🛡️ アカウント番号の動的・多重リアルタイム判定（ID 1決め打ち固定の完全根絶）
 async function resolveCurrentAccountId() {
-  if (cachedAccountId) return cachedAccountId;
-
-  const match = window.location.pathname.match(/\/u\/(\d+)/);
-  if (match) {
-    cachedAccountId = parseInt(match[1], 10) + 1;
-    return cachedAccountId;
+  // ① URLパスの /u/(\d+) を最優先でリアルタイム解析 (/u/0 ➜ ID 1, /u/1 ➜ ID 2, /u/2 ➜ ID 3, /u/3 ➜ ID 4)
+  const pathMatch = window.location.pathname.match(/\/u\/(\d+)/);
+  if (pathMatch) {
+    lastKnownAccountId = parseInt(pathMatch[1], 10) + 1;
+    return lastKnownAccountId;
   }
 
-  // URLに /u/X がない場合、自身のtabIdからbackgroundへアカウント番号を逆引き照会
+  // ② URLクエリパラメータの authuser=X 判定
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const authUser = urlParams.get("authuser");
+    if (authUser !== null && /^\d+$/.test(authUser)) {
+      lastKnownAccountId = parseInt(authUser, 10) + 1;
+      return lastKnownAccountId;
+    }
+  } catch (e) {}
+
+  // ③ URLにアカウント識別子がない場合、バックグラウンド側（タブID対照表）へ逆引き照会
   if (isContextValid()) {
     try {
       const response = await new Promise(resolve => {
@@ -39,14 +48,19 @@ async function resolveCurrentAccountId() {
           resolve(res && res.accountId ? res.accountId : null);
         });
       });
-      if (response) {
-        cachedAccountId = response;
-        return cachedAccountId;
+      if (response && response >= 1 && response <= 4) {
+        lastKnownAccountId = response;
+        return lastKnownAccountId;
       }
     } catch (e) {}
   }
 
-  cachedAccountId = 1;
+  // ④ 直前までに確定したアカウント番号があればそれを維持（安易にID 1へ上書きしない）
+  if (lastKnownAccountId && lastKnownAccountId >= 1 && lastKnownAccountId <= 4) {
+    return lastKnownAccountId;
+  }
+
+  // ⑤ 完全に手掛かりがない初期状態のみID 1とする
   return 1;
 }
 
@@ -268,8 +282,11 @@ async function extractFullChatHistoryWithHand(updateProgress) {
   return smartSampleContext(fullTextCombined);
 }
 
-async function requestGeminiApi(modelName, apiKey, promptText) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+// 🚀 Gemini API 堅牢通信基盤 (第1優先 30秒 ➜ 第2優先 60秒フォールバック ＆ AbortControllerタイマー破棄)
+async function requestGeminiApiWithFallback(apiKey, promptText) {
+  const primaryModel = "gemini-3.5-flash-lite";
+  const fallbackModel = "gemini-flash-lite-latest";
+
   const body = {
     contents: [{ parts: [{ text: promptText }] }],
     generationConfig: {
@@ -278,28 +295,64 @@ async function requestGeminiApi(modelName, apiKey, promptText) {
     }
   };
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
+  async function executeSingleFetch(modelName, timeoutMs) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, timeoutMs);
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const errMsg = err.error?.message || `HTTP ${res.status}`;
-    const errorObj = new Error(errMsg);
-    errorObj.status = res.status;
-    throw errorObj;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        const errMsg = errJson.error?.message || `HTTP ${res.status}`;
+        throw new Error(errMsg);
+      }
+
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+      return { text, usedModel: modelName };
+    } catch (err) {
+      if (err.name === "AbortError") {
+        throw new Error(`通信タイムアウト (${timeoutMs / 1000}秒超過)`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  // 1. 第1優先モデルの試行 (30秒タイムアウト)
+  let primaryError = null;
+  try {
+    return await executeSingleFetch(primaryModel, 30000);
+  } catch (err1) {
+    primaryError = err1;
+    console.warn(`[ナレッジ要約] 第1優先 (${primaryModel} / 30秒) で失敗: ${err1.message}。第2優先 (${fallbackModel} / 60秒) へ自動フォールバックします...`);
+  }
+
+  // 2. 第2優先モデルの試行 (60秒タイムアウト)
+  try {
+    return await executeSingleFetch(fallbackModel, 60000);
+  } catch (err2) {
+    console.error(`[ナレッジ要約] 第2優先 (${fallbackModel} / 60秒) も失敗: ${err2.message}`);
+    const detailMsg = `⚠️ 【AI要約エラー】\n` +
+      `・第1優先 (${primaryModel} / 30秒): ${primaryError ? primaryError.message : '不明なエラー'}\n` +
+      `・第2優先 (${fallbackModel} / 60秒): ${err2.message}\n\n` +
+      `※ネットワーク接続またはAI Studio発行のAPIキー設定をご確認ください。`;
+    throw new Error(detailMsg);
+  }
 }
 
 async function callGeminiForKnowledgeSummary(chatContext, apiConfig) {
-  const primaryModel = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
-  const fallbackModel = "gemini-flash-lite-latest";
-
   const prompt = `あなたはプロのソフトウェアエンジニア兼ナレッジマネージャーです。
 以下に提供する【セッション全体の全会話ログ】を最初から最後までしっかりと読み解き、後から検索して見返しやすい【開発ナレッジカード】を作成してください。
 
@@ -322,18 +375,7 @@ async function callGeminiForKnowledgeSummary(chatContext, apiConfig) {
 ${chatContext}
 `;
 
-  try {
-    const result = await requestGeminiApi(primaryModel, apiConfig.geminiApiKey, prompt);
-    return { text: result, usedModel: primaryModel };
-  } catch (err) {
-    console.warn(`プライマリモデル (${primaryModel}) でエラー: ${err.message}。フォールバック (${fallbackModel}) を試行します...`);
-    try {
-      const result = await requestGeminiApi(fallbackModel, apiConfig.geminiApiKey, prompt);
-      return { text: result, usedModel: fallbackModel };
-    } catch (err2) {
-      throw new Error(`全モデルで要約失敗: ${err.message} / ${err2.message}`);
-    }
-  }
+  return await requestGeminiApiWithFallback(apiConfig.geminiApiKey, prompt);
 }
 
 function validateSummaryCompleteness(text) {
@@ -383,10 +425,10 @@ async function executeKnowledgeSync(btn) {
     const apiConfig = res.apiConfig || {};
 
     let summaryText = "";
-    let usedModel = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
+    let usedModel = "gemini-3.5-flash-lite";
 
     if (apiConfig.geminiApiKey) {
-      btn.innerText = `🤖 ${usedModel} でセッション全体を要約中...`;
+      btn.innerText = `🤖 AI要約中... (30秒/60秒フォールバック搭載)`;
       try {
         const aiResponse = await callGeminiForKnowledgeSummary(fullText, apiConfig);
         summaryText = aiResponse.text;
@@ -405,7 +447,7 @@ async function executeKnowledgeSync(btn) {
 
       } catch (err) {
         console.error("Gemini API Error:", err);
-        summaryText = `【自動要約エラー: ${err.message}】\n\n■ 会話スニペット:\n${fullText.substring(0, 400)}...`;
+        summaryText = `【自動要約エラー】\n${err.message}\n\n■ 会話スニペット:\n${fullText.substring(0, 400)}...`;
       }
     } else {
       summaryText = `■ セッションの目的\n${title} の作業セッション\n\n■ 会話スニペット (APIキーを設定すると詳細要約されます)\n${fullText.substring(0, 400)}...\n\n■ 💡 重要キーワード\n・${title}、作業ログ`;
