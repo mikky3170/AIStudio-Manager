@@ -1,4 +1,4 @@
-// [v1.4.2 作業版 Rev.4] 直近トークン増分レシート（監査ログ）描画・アコーディオン制御の実装
+// [v1.4.3 作業版 Rev.6] ビューワー重複防止シングルトン起動制御＆モニター・レシート完全同期
 
 // === タブ1: IDモニター ＆ トークン管理 ===
 function setupCards() {
@@ -744,7 +744,7 @@ function renderProgramDashboard() {
   });
 }
 
-// 🧾 【新設】トークン増分レシート（監査ログ）の描画エンジン
+// 🧾 トークン増分レシート（監査ログ）の描画エンジン（全件保持・画面表示は直近50件で爆速化）
 function renderTokenReceiptLogs() {
   const container = document.getElementById("receiptList");
   const badge = document.getElementById("receiptCountBadge");
@@ -752,14 +752,22 @@ function renderTokenReceiptLogs() {
 
   container.innerHTML = "";
   const logs = tokenTransactionLogsData || [];
-  badge.innerText = `${logs.length}件`;
+  
+  if (logs.length > 50) {
+    badge.innerText = `全 ${logs.length}件 (直近50件表示中)`;
+  } else {
+    badge.innerText = `${logs.length}件`;
+  }
 
   if (logs.length === 0) {
     container.innerHTML = `<div style="font-size: 11px; color: #64748b; font-style: italic; text-align: center; padding: 12px 0;">まだ加算イベントの記録はありません。</div>`;
     return;
   }
 
-  logs.forEach(log => {
+  // 画面の快適なスクロールと描画パフォーマンスのため直近50件を表示
+  const displayLogs = logs.slice(0, 50);
+
+  displayLogs.forEach(log => {
     const item = document.createElement("div");
     let itemClass = "receipt-item";
     let badgeHtml = "";
@@ -811,26 +819,45 @@ function renderTokenReceiptLogs() {
   });
 }
 
-// 🧾 レシートアコーディオンおよびログ消去のイベント初期化
+// 🧾 レシートアコーディオン、全件CSVエクスポート、大画面ビューワー起動の初期化
 function initReceiptAccordion() {
   const head = document.getElementById("receiptHead");
   const section = document.getElementById("receiptSection");
   const arrow = document.getElementById("receiptToggleArrow");
   const clearBtn = document.getElementById("clearReceiptLogsBtn");
+  const exportCsvBtn = document.getElementById("exportReceiptCsvBtn");
+  const openViewerBtn = document.getElementById("openReceiptViewerBtn");
 
   if (head && section) {
     head.onclick = (e) => {
-      if (e.target.closest("#clearReceiptLogsBtn")) return;
+      if (e.target.closest(".btn-receipt-action") || e.target.closest("#clearReceiptLogsBtn")) return;
       section.classList.toggle("open");
       const isOpen = section.classList.contains("open");
       if (arrow) arrow.innerText = isOpen ? "▲ 閉じる" : "▼ 展開";
     };
   }
 
+  // 📥 過去の全レシートをUTF-8 BOM付きCSVとして一括ダウンロード
+  if (exportCsvBtn) {
+    exportCsvBtn.onclick = (e) => {
+      e.stopPropagation();
+      exportAllReceiptsToCsv();
+    };
+  }
+
+  // 📊 フル画面ビューワーのシングルトン起動制御（重複タブ防止 ＆ 既存タブへの自動フォーカス）
+  if (openViewerBtn) {
+    openViewerBtn.onclick = (e) => {
+      e.stopPropagation();
+      openOrFocusReceiptViewer();
+    };
+  }
+
   if (clearBtn) {
     clearBtn.onclick = (e) => {
       e.stopPropagation();
-      if (confirm("直近の加算レシート（監査ログ）を消去してもよろしいですか？\n※累計トークンやプログラムの集計数値自体は影響を受けません。")) {
+      const count = (tokenTransactionLogsData || []).length;
+      if (confirm(`記録されている直近の加算レシート（全 ${count} 件）を消去してもよろしいですか？\n※累計トークンや各プログラムの集計値そのものは影響を受けません。`)) {
         tokenTransactionLogsData = [];
         chrome.storage.local.set({ tokenTransactionLogs: [] }, () => {
           renderTokenReceiptLogs();
@@ -838,6 +865,106 @@ function initReceiptAccordion() {
       }
     };
   }
+}
+
+// 🛡️ ビューワーを重複なく安全に起動・フォーカスするシングルトン制御関数
+function openOrFocusReceiptViewer() {
+  const isExtensionEnv = (typeof chrome !== "undefined" && chrome.runtime && chrome.tabs);
+
+  if (isExtensionEnv) {
+    const targetUrl = chrome.runtime.getURL("receipt_viewer.html");
+
+    chrome.tabs.query({}, (tabs) => {
+      const existingTab = tabs.find(t => t.url && t.url.includes("receipt_viewer.html"));
+
+      if (existingTab) {
+        // すでに開いている既存タブを最前面にアクティブ化
+        chrome.tabs.update(existingTab.id, { active: true }, () => {
+          if (existingTab.windowId) {
+            chrome.windows.update(existingTab.windowId, { focused: true });
+          }
+        });
+      } else {
+        // まだ開いていない場合のみ新規タブを作成
+        chrome.tabs.create({ url: targetUrl });
+      }
+    });
+  } else {
+    // ローカル環境等でのフォールバック
+    window.open("receipt_viewer.html", "StudioManager_ReceiptViewer");
+  }
+}
+
+// 📥 全件レシートCSV生成＆ダウンロードエンジン
+function exportAllReceiptsToCsv() {
+  const logs = tokenTransactionLogsData || [];
+  if (logs.length === 0) {
+    alert("エクスポート対象のレシート記録がまだありません。");
+    return;
+  }
+
+  const headers = [
+    "ID",
+    "記録日時",
+    "アカウント",
+    "プログラムID",
+    "プログラム名",
+    "トークン増分(tk)",
+    "チャット累計トークン(tk)",
+    "イベント種別",
+    "チャットタイトル/タスク名",
+    "URL",
+    "備考/遮断・補正理由"
+  ];
+
+  function escapeCsvCell(val) {
+    if (val === null || val === undefined) return '""';
+    const str = String(val).replace(/"/g, '""');
+    return `"${str}"`;
+  }
+
+  const rows = logs.map(l => {
+    let typeLabel = "通常消費";
+    if (l.type === "fuse_blocked") typeLabel = "⛔ 異常急増遮断";
+    else if (l.type === "manual_correction") typeLabel = "✏️ 手動補正";
+    else if (l.type === "system_reset") typeLabel = "⚙️ 17時リセット";
+    else if (l.isLargeDelta) typeLabel = "⚠️ 急増注意";
+
+    const accountLabel = (l.accountId && l.accountId >= 1 && l.accountId <= 4) ? `ID ${l.accountId}` : "システム";
+    const fullDate = `${l.dateStr || ''} ${l.timeStr || ''}`.trim();
+
+    return [
+      escapeCsvCell(l.id),
+      escapeCsvCell(fullDate),
+      escapeCsvCell(accountLabel),
+      escapeCsvCell(l.programId || ''),
+      escapeCsvCell(l.programName || ''),
+      escapeCsvCell(l.delta || 0),
+      escapeCsvCell(l.totalChatTokens || 0),
+      escapeCsvCell(typeLabel),
+      escapeCsvCell(l.chatTitle || ''),
+      escapeCsvCell(l.url || ''),
+      escapeCsvCell(l.note || '')
+    ].join(",");
+  });
+
+  const csvContent = "\uFEFF" + [headers.map(h => `"${h}"`).join(","), ...rows].join("\r\n");
+
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const filename = `studio_token_receipt_${y}-${m}-${d}.csv`;
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function updateProgramWorkBadgesOnly() {
@@ -1129,7 +1256,7 @@ function attachEnhanceEvents() {
     btn.onclick = (e) => {
       e.stopPropagation();
       const pid = e.target.dataset.progId;
-      const planId = e.target.dataset.planId;
+      const planId = btn.dataset.planId;
       const prog = programsData.find(p => p.id === pid);
       if (prog && prog.enhancePlans && confirm("この計画を削除してもよろしいですか？")) {
         openedPlanIds.delete(planId);
