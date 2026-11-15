@@ -1,4 +1,4 @@
-// [v1.4.0 作業版 Rev.1] アイデア壁打ち初期化ハンドラの組み込みおよびv1.4.0起動ログへの同期
+// [作業版 Rev.2] AIコンシェルジュ＆音声清書の30秒/60秒フォールバック通信基盤統合とmanifest動的同期
 
 let conciergeChatHistory = [];
 let speechRecognizer = null;
@@ -190,7 +190,7 @@ async function finishAndCleanseSpeech(inputEl, micBtn) {
     return;
   }
 
-  showConciergeStatus("✨ 文脈から誤認識を修復し、美しい文章に清書中...");
+  showConciergeStatus("✨ 文脈から誤認識を修復し、美しい文章に清書中... (30秒/60秒フォールバック搭載)");
 
   try {
     const formatted = await cleanseAndFormatSpeechText(fullRawText);
@@ -283,9 +283,6 @@ async function cleanseAndFormatSpeechText(rawSpeech) {
       .trim();
   }
 
-  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
-
   const prompt = `あなたはプロのテクニカルライターです。
 以下は音声認識で文字起こしされたユーザーの発言です。
 
@@ -300,20 +297,8 @@ async function cleanseAndFormatSpeechText(rawSpeech) {
 ${rawSpeech}
 `;
 
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.1 }
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-
-  if (!res.ok) throw new Error("音声整形APIエラー");
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || rawSpeech;
+  const aiResult = await callGeminiApiWithFallback(prompt, { temperature: 0.1 });
+  const text = aiResult.text || rawSpeech;
   return text.replace(/^["'「]+|["'」]+$/g, '').trim();
 }
 
@@ -386,7 +371,7 @@ async function handleConciergeSubmit() {
   appendChatMessage("user", text);
   inputEl.value = "";
   
-  showConciergeStatus("ただいまマニュアルを一生懸命調べておりますので、もうしばらくお待ちください。");
+  showConciergeStatus("ただいまマニュアルを一生懸命調べておりますので、もうしばらくお待ちください。 (30秒/60秒フォールバック搭載)");
 
   if (!apiConfig.geminiApiKey) {
     appendChatMessage("assistant", "⚠️ Gemini APIキーが設定されていません。画面右上の「⚙️ 設定」タブを開き、AI Studioで発行したAPIキーを保存してください。");
@@ -403,16 +388,13 @@ async function handleConciergeSubmit() {
     appendChatMessage("assistant", aiAnswer, isDeepDive);
   } catch (err) {
     console.error("Concierge Error:", err);
-    appendChatMessage("assistant", `⚠️ エラーが発生しました: ${err.message}`);
+    appendChatMessage("assistant", `⚠️ エラーが発生しました:\n${err.message}`);
   } finally {
     hideConciergeStatus();
   }
 }
 
 async function callGeminiForConcierge(latestQuery) {
-  const model = apiConfig.geminiModelName || "gemini-3.5-flash-lite";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiConfig.geminiApiKey}`;
-
   const fullSourceCode = await loadFullExtensionSourceCode();
 
   let urgentWarnings = [];
@@ -469,154 +451,10 @@ ${fullSourceCode}
     });
   });
 
-  const body = {
+  const aiResult = await callGeminiApiWithFallback(null, {
     contents: contents,
-    generationConfig: { temperature: 0.2 }
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    temperature: 0.2
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
-  }
-
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "回答を取得できませんでした。";
+  return aiResult.text || "回答を取得できませんでした。";
 }
-
-// === システム全体のブートストラップ ＆ 変更監視エンジン ===
-function bootstrap() {
-  console.log(`🚀 Studioマネージャー v1.4.0 起動完了`);
-
-  initNavigation();
-  initModalHandlers();
-  initPreflightModalHandlers();
-  initEnhanceModalHandlers();
-  initHistoryModalHandlers();
-  initTriageModalHandlers();
-  initSparringModalHandlers(); // 💡 アイデア壁打ちモーダルハンドラの確実な登録
-  initTokenCorrectModalHandlers();
-  initConciergeHandlers();
-  updateCountdown();
-
-  loadFullExtensionSourceCode();
-
-  chrome.storage.local.get(["accounts", "programs", "knowledgeLogs", "dailyProgUsage", "systemInstructionTemplate", "apiConfig"], (res) => {
-    if (res.programs && res.programs.length > 0) programsData = res.programs;
-    if (res.knowledgeLogs) knowledgeLogsData = res.knowledgeLogs;
-    if (res.dailyProgUsage) dailyProgUsageData = res.dailyProgUsage;
-    
-    const currentStoredTemplate = res.systemInstructionTemplate || "";
-    const isOldTemplate = (
-      !currentStoredTemplate ||
-      currentStoredTemplate.includes("Studioマネージャーの専任プロジェクトリーダー") ||
-      !currentStoredTemplate.includes("【Gemini API連携モデルの厳格固定】")
-    );
-
-    if (isOldTemplate) {
-      systemInstructionTemplate = defaultCommonSystemInstruction;
-      chrome.storage.local.set({ systemInstructionTemplate });
-    } else {
-      systemInstructionTemplate = currentStoredTemplate;
-    }
-
-    if (res.apiConfig) apiConfig = Object.assign(apiConfig, res.apiConfig);
-    if (res.accounts) {
-      for (let i = 1; i <= 4; i++) {
-        if (res.accounts[i]) {
-          accountsData[i] = Object.assign(accountsData[i] || {}, res.accounts[i]);
-        }
-      }
-    }
-
-    cleanupAndMigrateSaveHistory();
-
-    isDataLoaded = true;
-    updateActiveModelBadge();
-    updateAppVersionBadge();
-    setupCards();
-    renderProgramDashboard();
-    renderMasterSettings();
-
-    setInterval(updateCountdown, 1000);
-    setInterval(syncBackgroundStats, 2000);
-  });
-
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === "local") {
-      if (changes.apiConfig) {
-        apiConfig = Object.assign(apiConfig, changes.apiConfig.newValue || {});
-        updateActiveModelBadge();
-      }
-      if (changes.systemInstructionTemplate) {
-        systemInstructionTemplate = changes.systemInstructionTemplate.newValue || defaultCommonSystemInstruction;
-      }
-      if (changes.accounts) {
-        const newAccounts = changes.accounts.newValue;
-        if (newAccounts) {
-          for (let i = 1; i <= 4; i++) {
-            if (newAccounts[i]) {
-              accountsData[i].tokens = newAccounts[i].tokens;
-              accountsData[i].currentChatTokens = newAccounts[i].currentChatTokens;
-              accountsData[i].meterLevel = newAccounts[i].meterLevel;
-              accountsData[i].statusMode = newAccounts[i].statusMode;
-              accountsData[i].isRateLimited = newAccounts[i].isRateLimited;
-              accountsData[i].hasError = newAccounts[i].hasError;
-              accountsData[i].startTime = newAccounts[i].startTime;
-              accountsData[i].tabId = newAccounts[i].tabId;
-              accountsData[i].currentProgramId = newAccounts[i].currentProgramId;
-            }
-          }
-          updateCardValues();
-          updateProgramWorkBadgesOnly();
-        }
-      }
-      if (changes.dailyProgUsage) {
-        dailyProgUsageData = changes.dailyProgUsage.newValue || {};
-        renderProgramDashboard();
-      }
-      if (changes.knowledgeLogs) {
-        knowledgeLogsData = changes.knowledgeLogs.newValue || [];
-        renderKnowledgeFilterTabs();
-        renderKnowledgeList();
-      }
-      if (changes.programs) {
-        programsData = changes.programs.newValue || [];
-        updateAppVersionBadge();
-        renderProgramDashboard();
-      }
-    }
-  });
-}
-
-function syncBackgroundStats() {
-  chrome.storage.local.get(["accounts", "dailyProgUsage"], (res) => {
-    if (res.accounts) {
-      for (let i = 1; i <= 4; i++) {
-        const bgAcc = res.accounts[i];
-        if (bgAcc) {
-          accountsData[i].tokens = bgAcc.tokens;
-          accountsData[i].currentChatTokens = bgAcc.currentChatTokens;
-          accountsData[i].meterLevel = bgAcc.meterLevel;
-          accountsData[i].statusMode = bgAcc.statusMode;
-          accountsData[i].isRateLimited = bgAcc.isRateLimited;
-          accountsData[i].hasError = bgAcc.hasError;
-          accountsData[i].startTime = bgAcc.startTime;
-          accountsData[i].tabId = bgAcc.tabId;
-        }
-      }
-      updateCardValues();
-      updateProgramWorkBadgesOnly();
-    }
-    if (res.dailyProgUsage) {
-      dailyProgUsageData = res.dailyProgUsage;
-    }
-  });
-}
-
-bootstrap();
